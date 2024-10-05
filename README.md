@@ -10,11 +10,12 @@ Acknowledgements:
 * [IBM BIOS Font](https://int10h.org/oldschool-pc-fonts/fontlist/font?ibm_bios)
 * [BGB Gameboy Palette](https://lospec.com/palette-list/nintendo-gameboy-bgb)
 * Maybe [CGA MIBEND4 Palette](https://lospec.com/palette-list/cga-mibend4)
+* Warp shader derived from [shadertoy/lsl3RH](https://www.shadertoy.com/view/lsl3RH)
 
 Start with: `npm start` (after running `npm i` once)
 
-Theming
-  Dwaves and armor?
+Visuals
+  Gas giant background
 Evaluate victory condition
   Or, fixed number of planets?
     Then level seeding determines $Values, and all other parameters are pure random
@@ -22,6 +23,7 @@ Evaluate victory condition
   And, probably: title page, high scores
 Polish
   Tooltips on DWARFS especially
+  Change Armor/Speed/etc labels to be vertical on the side?
 FTUE
   No configuration on first probe
   If they fail, "let's try that again", and refund the probe

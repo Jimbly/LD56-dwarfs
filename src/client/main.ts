@@ -10,9 +10,12 @@ import * as camera2d from 'glov/client/camera2d';
 import * as engine from 'glov/client/engine';
 import {
   getFrameIndex,
+  getFrameTimestamp,
 } from 'glov/client/engine';
 import {
   ALIGN,
+  FontDrawOpts,
+  fontStyle,
   fontStyleColored,
   vec4ColorFromIntColor,
 } from 'glov/client/font';
@@ -39,6 +42,7 @@ import {
   buttonWasFocused,
   drawBox,
   drawHBox,
+  drawRect,
   drawVBox,
   panel,
   scaleSizes,
@@ -91,7 +95,7 @@ const INFO_PANEL_H = 49;
 const GOAL_SCORE = 75000;
 
 // Mining minigame balance
-const MIN_PROGRESS = 0.01; // if speed=0, still advance Danger by this much progress
+const MIN_PROGRESS = 0.01; // if speed=0, still advance by this much
 const PROGRESS_SPEED = 0.0001;
 const ACCEL_MAX = 0.0005;
 const ACCEL_MIN = -1.5; // relative to ACCEL_MAX
@@ -233,7 +237,6 @@ class GameState {
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
       this.probe_config.push(1);
     }
-    this.probe_config[0] = 0;
 
     let num_exotics = 4;
     let exotics: ExoticDef[] = [];
@@ -327,6 +330,7 @@ let sprite_toggles: Sprite;
 let game_state: GameState;
 let sprite_dither: Sprite;
 let shader_dither: Shader;
+let shader_gas_giant: Shader;
 let shader_dither_transition: Shader;
 const dither_uvs = vec4(0, 0, game_width / 4, game_height / 4);
 function init(): void {
@@ -342,6 +346,7 @@ function init(): void {
   });
   shader_dither = shaderCreate('shaders/dither.fp');
   shader_dither_transition = shaderCreate('shaders/dither_transition.fp');
+  shader_gas_giant = shaderCreate('shaders/test.fp');
   game_state = new GameState();
 }
 
@@ -511,13 +516,58 @@ function drawExoticInfoPanel(param: {
   return y;
 }
 
+let bg_time = 0;
+function drawBG(dt: number, h: number): void {
+  bg_time += dt;
+  sprite_dither.draw({
+    x: 0, y: 0, z: 1,
+    w: game_width, h: game_height,
+    shader: shader_gas_giant,
+    shader_params: {
+      params: [1, 1, 1, bg_time/1000],
+      uvscale: [game_width/2048/dither_uvs[2], game_height/1024/dither_uvs[3], 0.1, h * 0.5],
+      c0: palette[0],
+      c1: palette[1],
+      c2: palette[2],
+      c3: palette[3],
+    },
+    color: palette[0],
+    uvs: dither_uvs,
+  });
+
+}
 
 const CONFIG_TRANSITION_IN_TIME = 600;
 let transition_time = 0;
 
+let style_non_panel = fontStyle(null, {
+  color: palette_font[3],
+  outline_color: palette_font[1],
+  outline_width: 5.25,
+});
+function drawNonPanel(param: FontDrawOpts): void {
+  param.style = style_non_panel;
+  let w = uiGetFont().draw(param);
+  let rect_x: number;
+  if ((param.align || 0) & ALIGN.HCENTER) {
+    let x_mid = param.x + param.w! / 2;
+    rect_x = floor(x_mid - w/2);
+  } else if ((param.align || 0) & ALIGN.HRIGHT) {
+    rect_x = param.x + (param.w || 0) - w;
+  } else {
+    rect_x = param.x;
+  }
+  if (false) {
+    drawRect(rect_x - 2, param.y - 2, rect_x + w, param.y + CHH + 1, (param.z || Z.UI) - 0.5,
+      palette[1]);
+  }
+}
+
 function stateDroneConfig(dt: number): void {
   let font = uiGetFont();
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
+
+  drawBG(dt, 0);
 
   let disabled = false;
   if (transition_time) {
@@ -595,7 +645,7 @@ function stateDroneConfig(dt: number): void {
   x = game_width - 1 - w;
   y = 1;
   z = Z.UI;
-  font.draw({
+  drawNonPanel({
     color: palette_font[3],
     x, y, z, w,
     text: 'Exotics',
@@ -704,7 +754,7 @@ function stateDroneConfig(dt: number): void {
   }
   y += uiButtonHeight() + 2;
   if (!disabled) {
-    font.draw({
+    drawNonPanel({
       color: palette_font[3],
       x: 0, y, z,
       w: game_width,
@@ -715,13 +765,13 @@ function stateDroneConfig(dt: number): void {
 
   z = Z.UI;
   y = game_height - LINEH * 2 - 1;
-  font.draw({
+  drawNonPanel({
     color: palette_font[3],
     x: 1, y, z,
     text: `$${game_state.level_score} Planet Score`,
   });
   y += LINEH;
-  font.draw({
+  drawNonPanel({
     color: palette_font[3],
     x: 1, y, z,
     text: `$${game_state.game_score}/$${GOAL_SCORE} Campaign`,
@@ -746,7 +796,7 @@ function stateDroneConfig(dt: number): void {
       game_state.game_score += game_state.survey_bonus;
     }
   } else {
-    font.draw({
+    drawNonPanel({
       color: palette_font[3],
       x: 1, y, z,
       w: game_width - 1,
@@ -1013,6 +1063,8 @@ function stateMine(dt: number): void {
   let font = uiGetFont();
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
 
+  drawBG(dt, mining_state.progress);
+
   let do_accel = keyDown(KEYS.SPACE) || mouseDownAnywhere();
   let maxp = 1; // (0.7 + game_state.probe_config[0] * 0.3);
   let do_flicker = false;
@@ -1040,7 +1092,7 @@ function stateMine(dt: number): void {
       mining_state.accel = 0;
     }
 
-    let dprogress = mining_state.speed * dt * PROGRESS_SPEED;
+    let dprogress = max(mining_state.speed, MIN_PROGRESS) * dt * PROGRESS_SPEED;
     if (engine.DEBUG && keyDown(KEYS.W)) {
       dprogress += dt * 0.01;
     }
@@ -1059,7 +1111,7 @@ function stateMine(dt: number): void {
       let time_to_target = mining_state.danger_target_time - mining_state.progress;
       if (time_to_target > 0) {
         let danger_to_target = mining_state.danger_target - mining_state.danger;
-        mining_state.danger += min(max(dt * PROGRESS_SPEED * MIN_PROGRESS, dprogress) / time_to_target, 1) *
+        mining_state.danger += min(dprogress / time_to_target, 1) *
           danger_to_target;
       }
     }
@@ -1180,7 +1232,7 @@ function stateMine(dt: number): void {
       y,
       z,
       w: text_w,
-      h: CHH + 11,
+      h: CHH + 12,
     });
     y += CHH + 7;
     z+=2;
@@ -1195,7 +1247,8 @@ function stateMine(dt: number): void {
   let x1 = 268 + vbar_xoffs;
   let x2 = game_width - BAR_SHORT_SIZE - 4*2 - 36 + vbar_xoffs;
   let x0 = x1 - (x2 - x1);
-  drawVBar('vbar2', x0, vbar_y, 'Armor', 1 - mining_state.stress);
+  let armor_flicker = mining_state.stress > 0.9 ? getFrameTimestamp() % 200 < 100 : false;
+  drawVBar(armor_flicker ? 'vbar' : 'vbar2', x0, vbar_y, 'Armor', 1 - mining_state.stress);
   drawVBar(flicker ? 'vbar' : 'vbar2', x1, vbar_y, 'Speed', mining_state.speed);
   drawVBar(flicker ? 'vbar2' : 'vbar', x2, vbar_y,
     'Safety', 1 - mining_state.danger);
@@ -1259,7 +1312,7 @@ export function main(): void {
   init();
 
   engine.setState(stateDroneConfig);
-  if (engine.DEBUG && true) {
+  if (engine.DEBUG && false) {
     startMining();
   }
 }

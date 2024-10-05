@@ -2,9 +2,16 @@
 precision mediump float;
 precision mediump int;
 
+uniform sampler2D tex0;
+
 varying lowp vec4 interp_color;
 varying highp vec2 interp_texcoord;
 uniform vec4 params;
+uniform vec4 uvscale;
+uniform vec4 c0;
+uniform vec4 c1;
+uniform vec4 c2;
+uniform vec4 c3;
 
 // Partially From: https://www.shadertoy.com/view/lsl3RH
 // Created by inigo quilez - iq/2013
@@ -81,11 +88,22 @@ vec3 doMagic(vec2 p)
 
   float f = func(q);
 
-  vec3 col = mix(interp_color.rgb, params.rgb, f );
-  return col;
+  f = clamp(f * 1.4 - 0.4, 0.0, 1.0);
+
+  vec4 tex = texture2D(tex0, interp_texcoord);
+  if (f < 0.25) {
+    return mix(c0.rgb, c1.rgb, tex.r < f*4.0 ? 1.0 : 0.0);
+  }
+  if (f < 0.5) {
+    return mix(c1.rgb, c2.rgb, tex.r < f*4.0 - 1.0 ? 1.0 : 0.0);
+  }
+  if (f < 0.75) {
+    return mix(c2.rgb, c0.rgb, tex.r < f*4.0 - 2.0 ? 1.0 : 0.0);
+  }
+  return mix(c0.rgb, c1.rgb, tex.r < f*4.0 - 3.0 ? 1.0 : 0.0);
 }
 
 void main()
 {
-  gl_FragColor = vec4( doMagic( interp_texcoord ), 1.0 );
+  gl_FragColor = vec4( doMagic( interp_texcoord * uvscale.xy + uvscale.zw ), 1.0 );
 }
