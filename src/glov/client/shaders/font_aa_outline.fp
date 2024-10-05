@@ -16,6 +16,7 @@ void main()
   float blend_t = clamp(sdf * param0.x + param0.y, 0.0, 1.0);
   // Outline
   float outline_t = clamp(sdf * param0.x + param0.z, 0.0, 1.0);
+  outline_t = outline_t < 0.5 ? 0.0 : 1.0; // LD56 HACK
   // Composite
   #ifdef NOPREMUL
   outline_t = outline_t * outline_color.w;

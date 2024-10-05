@@ -90,7 +90,7 @@ const game_width = 384; // 1920x1080 / 5
 const game_height = 216;
 
 const INFO_PANEL_W = 118;
-const INFO_PANEL_H = 49;
+const INFO_PANEL_H = 51;
 
 const GOAL_SCORE = 75000;
 
@@ -128,6 +128,7 @@ type ExoticDef = {
   total_found: number;
   knowledge: number;
   knob_order: number[];
+  exotic_style: number;
 };
 type RecentRecord = {
   exotic: number;
@@ -199,7 +200,7 @@ class GameState {
   game_score = 0;
   constructor() {
     this.initLevel(1234);
-    if (engine.DEBUG && true) {
+    if (engine.DEBUG && false) {
       for (let ii = 0; ii < 23; ++ii) {
         this.findExoticDebug();
       }
@@ -249,6 +250,7 @@ class GameState {
         total_found: 0,
         knowledge: 0,
         knob_order: [],
+        exotic_style: rand.range(5),
       };
       for (let jj = 0; jj < NUM_KNOBS; ++jj) {
         exotic.knobs.push(rand.range(3));
@@ -385,6 +387,35 @@ function perc(v: number): string {
 }
 
 let style_text = fontStyleColored(null, palette_font[PALETTE_TEXT]);
+const outline_width = 5.25;
+
+let style_exotic = [
+  fontStyle(style_text, {
+    color: palette_font[1],
+    outline_color: palette_font[2],
+    outline_width,
+  }),
+  fontStyle(style_text, {
+    color: palette_font[3],
+    outline_color: palette_font[1],
+    outline_width,
+  }),
+  fontStyle(style_text, {
+    color: palette_font[2],
+    outline_color: palette_font[0],
+    outline_width,
+  }),
+  fontStyle(style_text, {
+    color: palette_font[0],
+    outline_color: palette_font[2],
+    outline_width,
+  }),
+  fontStyle(style_text, {
+    color: palette_font[1],
+    outline_color: palette_font[0],
+    outline_width,
+  }),
+];
 
 const KNOB_W = 9;
 
@@ -420,10 +451,15 @@ function drawExoticInfoPanel(param: {
   } else {
     let xx = x + 7;
     w -= 7 * 2;
-    let yy = y + 5;
-    // TODO: exotic icons
+    let yy = y + 6;
+    autoAtlas('game', `exotic${exotic.exotic_style+1}`).draw({
+      x: xx,
+      y: yy,
+      z,
+      w: 7, h: 7,
+    });
     font.draw({
-      style: style_text,
+      style: style_exotic[exotic.exotic_style],
       x: xx,
       y: yy,
       z,
@@ -453,7 +489,7 @@ function drawExoticInfoPanel(param: {
         });
       }
     }
-    yy += LINEH;
+    yy += LINEH + 1;
     yy--;
     drawBox({
       x: x + 7,
@@ -576,7 +612,7 @@ let transition_time = 0;
 let style_non_panel = fontStyle(null, {
   color: palette_font[3],
   outline_color: palette_font[1],
-  outline_width: 5.25,
+  outline_width,
 });
 function drawNonPanel(param: FontDrawOpts): void {
   param.style = style_non_panel;
@@ -720,9 +756,12 @@ function stateDroneConfig(dt: number): void {
       let recent = recent_exotics[ii];
       let exotic = exotics[recent.exotic];
 
-      // TODO: exotic icons
+      autoAtlas('game', `exotic${exotic.exotic_style+1}`).draw({
+        x, y, z,
+        w: 7, h: 7,
+      });
       font.draw({
-        style: style_text,
+        style: style_exotic[exotic.exotic_style],
         x, y, z,
         text: ` ${exotic.name}`,
       });
@@ -919,7 +958,7 @@ function doMiningResult(dt: number): boolean {
 
   let x = floor((game_width - RESULT_W)/2);
   const x0 = x;
-  let y = 30;
+  let y = 24;
   const y0 = y;
   let z = Z.UI + 100;
   const z0 = z;

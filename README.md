@@ -14,8 +14,6 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
-Visuals
-  Exotic icons / different color scheme for each one
 Evaluate victory condition
   Or, fixed number of planets?
     Then level seeding determines $Values, and all other parameters are pure random
@@ -25,6 +23,8 @@ Polish
   Tooltips on DWARFS especially
   Change Armor/Speed/etc labels to be vertical on the side?
   Border color?
+  Propeller on blimp
+  More noticeable animation on study/dismantle, drip some pixels?
 FTUE
   No configuration on first probe
   If they fail, "let's try that again", and refund the probe
