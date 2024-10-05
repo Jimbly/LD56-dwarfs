@@ -153,7 +153,7 @@ function knobKnown(exotic: ExoticDef, idx: number): boolean {
   return (exotic.knob_order.indexOf(idx)+0.5) < exotic.knowledge;
 }
 
-function matchInfo(exotic: ExoticDef, probe_config: number[]): {
+function matchInfo(exotic: ExoticDef, probe_config: number[], for_value: boolean): {
   exact: number;
   total: number;
   min: number;
@@ -175,7 +175,7 @@ function matchInfo(exotic: ExoticDef, probe_config: number[]): {
       ++diff; // 0/1/3
     }
     let match = 3 - diff; // 0/2/3
-    let weight = ii < 2 ? 4 : 1;
+    let weight = (ii < 2) === !for_value ? 4 : 1;
     total += weight * 3;
     sum_exact += match * weight;
     if (known[ii]) {
@@ -199,7 +199,7 @@ class GameState {
   game_score = 0;
   constructor() {
     this.initLevel(1234);
-    if (engine.DEBUG && false) {
+    if (engine.DEBUG && true) {
       for (let ii = 0; ii < 23; ++ii) {
         this.findExoticDebug();
       }
@@ -266,20 +266,16 @@ class GameState {
     let { exotics, probe_config } = this;
     let options = [];
     let total_w = 0;
-    let max_match = 0;
     for (let ii = 0; ii < exotics.length; ++ii) {
       let exotic = exotics[ii];
-      let match_info = matchInfo(exotic, probe_config);
+      let match_info = matchInfo(exotic, probe_config, false);
       let w = match_info.exact;
-      max_match = match_info.total;
       total_w += w;
       options.push([w, ii]);
     }
     let choice;
-    let our_match;
     if (!total_w) {
       choice = rand.range(NUM_KNOBS);
-      our_match = 1;
     } else {
       let r = rand.range(total_w);
       choice = 0;
@@ -287,11 +283,11 @@ class GameState {
         r -= options[choice][0];
         choice++;
       }
-      our_match = options[choice][0];
       choice = options[choice][1];
     }
-    let match_perc = our_match / max_match;
     let exotic = exotics[choice];
+    let match_info_value = matchInfo(exotic, probe_config, true);
+    let match_perc = match_info_value.exact / match_info_value.total;
     let base_value = exotic.value;
     // match   value range
     //   0       [0.1, 0.5], 0% crit
@@ -434,7 +430,7 @@ function drawExoticInfoPanel(param: {
       text: ` ${exotic.name}`,
     });
     if (show_match) {
-      let match_info = matchInfo(exotic, game_state.probe_config);
+      let match_info = matchInfo(exotic, game_state.probe_config, false);
       font.draw({
         style: style_text,
         x: xx,
@@ -937,7 +933,7 @@ function doMiningResult(dt: number): boolean {
     x, y, z,
     w,
     align: ALIGN.HCENTER | ALIGN.HWRAP,
-    text: mining_result_state.is_new ? 'Sample of new Exotic found!' :
+    text: mining_result_state.is_new ? 'Sample of NEW Exotic found!' :
       'Exotic retrieved!',
   }) + 1;
 
