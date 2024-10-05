@@ -94,8 +94,11 @@ const GOAL_SCORE = 75000;
 const MIN_PROGRESS = 0.01; // if speed=0, still advance Danger by this much progress
 const PROGRESS_SPEED = 0.0001;
 const ACCEL_MAX = 0.0005;
+const ACCEL_MIN = -1.5; // relative to ACCEL_MAX
 const ACCEL_SPEED = 0.01;
-const DAMAGE_RATE = 0.001;
+const DECEL_SPEED = 0.01;
+const DAMAGE_RATE = 0.002;
+const AMBIENT_DAMAGE_RATE = 0.000015;
 
 
 let rand = randCreate(1234);
@@ -192,8 +195,8 @@ class GameState {
   game_score = 0;
   constructor() {
     this.initLevel(1234);
-    if (engine.DEBUG) {
-      for (let ii = 0; ii < 24; ++ii) {
+    if (engine.DEBUG && false) {
+      for (let ii = 0; ii < 23; ++ii) {
         this.findExoticDebug();
       }
     }
@@ -223,13 +226,14 @@ class GameState {
     rand.reseed(seed);
     this.level_score = 0;
     this.probes_left = 24;
-    this.survey_bonus = 5000;
+    this.survey_bonus = 1500;
     this.survey_done = false;
     this.probe_config = [];
 
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
       this.probe_config.push(1);
     }
+    this.probe_config[0] = 0;
 
     let num_exotics = 4;
     let exotics: ExoticDef[] = [];
@@ -724,13 +728,11 @@ function stateDroneConfig(dt: number): void {
   });
 
   y = game_height - LINEH - 1;
-  let all_surveyed = true;
+  let total_knowledge = 0;
   for (let ii = 0; ii < exotics.length; ++ii) {
-    if (exotics[ii].knowledge !== NUM_KNOBS) {
-      all_surveyed = false;
-    }
+    total_knowledge += exotics[ii].knowledge;
   }
-  if (all_surveyed && !game_state.survey_done) {
+  if (total_knowledge >= 0.8 * NUM_KNOBS * exotics.length && !game_state.survey_done) {
     button_w = 106;
     if (button({
       x: game_width - 1 - button_w - 4,
@@ -879,6 +881,7 @@ function doMiningResult(dt: number): boolean {
       w: button_w,
       text: 'STUDY',
       auto_focus: true,
+      hotkey: KEYS.SPACE,
     })) {
       mining_result_state.stage = 'study_anim';
       if (!mining_result_state.knowledge_start) {
@@ -908,7 +911,7 @@ function doMiningResult(dt: number): boolean {
       align: ALIGN.HCENTER | ALIGN.HWRAP,
       text: mining_result_state.stage === 'study_anim' ? 'Studying...' :
         mining_result_state.stage === 'dismantle_anim' ? 'Dismantling...' :
-        'Selling...',
+        'Shipping...',
     }) + 1;
   } else if (mining_result_state.stage === 'choice') {
     if (buttonText({
@@ -937,7 +940,7 @@ function doMiningResult(dt: number): boolean {
       y: y,
       z,
       w: button_w,
-      text: 'SELL',
+      text: 'SHIP',
     })) {
       mining_result_state.stage = 'sell_anim';
       mining_result_state.t = 0;
@@ -1011,7 +1014,7 @@ function stateMine(dt: number): void {
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
 
   let do_accel = keyDown(KEYS.SPACE) || mouseDownAnywhere();
-  let maxp = (0.5 + game_state.probe_config[4] * 0.5);
+  let maxp = 1; // (0.7 + game_state.probe_config[0] * 0.3);
   let do_flicker = false;
   if (mining_state.done) {
     transition_time += dt;
@@ -1025,15 +1028,15 @@ function stateMine(dt: number): void {
     if (do_accel) {
       mining_state.accel += dt * ACCEL_SPEED;
     } else {
-      mining_state.accel -= dt * ACCEL_SPEED;
+      mining_state.accel -= dt * DECEL_SPEED;
     }
-    mining_state.accel = clamp(mining_state.accel, -1, 1);
+    mining_state.accel = clamp(mining_state.accel, ACCEL_MIN, 1);
 
     mining_state.speed += mining_state.accel * dt * ACCEL_MAX;
     mining_state.speed = clamp(mining_state.speed, 0, 1);
-    if (!mining_state.speed) {
+    if (!mining_state.speed && mining_state.accel < 0) {
       mining_state.accel = 0;
-    } else if (mining_state.speed === 1) {
+    } else if (mining_state.speed === 1 && mining_state.accel > 0) {
       mining_state.accel = 0;
     }
 
@@ -1068,6 +1071,10 @@ function stateMine(dt: number): void {
       mining_state.stress = clamp(mining_state.stress, 0, 1);
       over_danger_time += dt;
       do_flicker = true;
+    } else if (!mining_state.done) {
+      // minimal stress accumulation based on real time
+      mining_state.stress += AMBIENT_DAMAGE_RATE * dt;
+      mining_state.stress = clamp(mining_state.stress, 0, 1);
     } else {
       over_danger_time = 0;
     }
@@ -1182,12 +1189,15 @@ function stateMine(dt: number): void {
   let hbar_x = (game_width - BAR_LONG_SIZE) / 2;
   // let hbar_x = 64;
   drawHBar(hbar_x, 8, 'Progress', mining_state.progress / maxp);
-  drawHBar(hbar_x, 174, 'Stress', mining_state.stress);
   let vbar_y = 42;
   let vbar_xoffs = 12;
   let flicker = do_flicker ? over_danger_time % 200 < 100 : false;
-  drawVBar(flicker ? 'vbar' : 'vbar2', 268 + vbar_xoffs, vbar_y, 'Speed', mining_state.speed);
-  drawVBar(flicker ? 'vbar2' : 'vbar', game_width - BAR_SHORT_SIZE - 4*2 - 36 + vbar_xoffs, vbar_y,
+  let x1 = 268 + vbar_xoffs;
+  let x2 = game_width - BAR_SHORT_SIZE - 4*2 - 36 + vbar_xoffs;
+  let x0 = x1 - (x2 - x1);
+  drawVBar('vbar2', x0, vbar_y, 'Armor', 1 - mining_state.stress);
+  drawVBar(flicker ? 'vbar' : 'vbar2', x1, vbar_y, 'Speed', mining_state.speed);
+  drawVBar(flicker ? 'vbar2' : 'vbar', x2, vbar_y,
     'Safety', 1 - mining_state.danger);
 }
 
@@ -1196,7 +1206,7 @@ function startMining(): void {
   let danger_init = rand.floatBetween(0.25, 0.75);
   mining_state = {
     progress: 0,
-    speed: 0,
+    speed: 0.5,
     accel: 0,
     stress: 0,
     danger: 0,
@@ -1249,7 +1259,7 @@ export function main(): void {
   init();
 
   engine.setState(stateDroneConfig);
-  if (engine.DEBUG && false) {
+  if (engine.DEBUG && true) {
     startMining();
   }
 }

@@ -15,6 +15,11 @@ Start with: `npm start` (after running `npm i` once)
 
 Theming
   Dwaves and armor?
+Evaluate victory condition
+  Or, fixed number of planets?
+    Then level seeding determines $Values, and all other parameters are pure random
+      Possibly seeded random for values of each find
+  And, probably: title page, high scores
 Polish
   Tooltips on DWARFS especially
 FTUE
