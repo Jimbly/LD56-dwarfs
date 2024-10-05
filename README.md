@@ -36,6 +36,8 @@ Gas Giant
     view stress
     view danger
     visuals while descending
+  FTUE
+    No configuration on first probe
 
 Ideas:
 # Gas Giant Surveying

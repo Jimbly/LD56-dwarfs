@@ -1,8 +1,10 @@
 /*eslint global-require:off*/
+/* eslint @typescript-eslint/no-use-before-define: ["error",{functions:false}]*/
 // eslint-disable-next-line import/order
 const local_storage = require('glov/client/local_storage');
 local_storage.setStoragePrefix('LD56'); // Before requiring anything else that might load from this
 
+import { autoResetSkippedFrames } from 'glov/client/auto_reset';
 import { autoAtlas } from 'glov/client/autoatlas';
 import * as engine from 'glov/client/engine';
 import {
@@ -16,8 +18,10 @@ import {
   mouseDownAnywhere,
 } from 'glov/client/input';
 import { netInit } from 'glov/client/net';
+import { shaderCreate } from 'glov/client/shaders';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import {
+  Shader,
   Sprite,
   spriteCreate,
 } from 'glov/client/sprites';
@@ -36,19 +40,20 @@ import {
   uiButtonHeight,
   uiGetFont,
   uiSetPanelColor,
+  uiTextHeight,
 } from 'glov/client/ui';
 import {
   randCreate,
   shuffleArray,
 } from 'glov/common/rand_alea';
-import { clamp, plural } from 'glov/common/util';
+import { clamp, lerp, plural } from 'glov/common/util';
 import {
   unit_vec,
   v4copy,
   vec4,
 } from 'glov/common/vmath';
 
-const { ceil, floor, max, min, round } = Math;
+const { abs, ceil, floor, max, min, round } = Math;
 
 const palette_font = [
   0x081820ff,
@@ -75,21 +80,23 @@ const game_height = 216;
 
 const INFO_PANEL_W = 118;
 const INFO_PANEL_H = 49;
-const CONFIGURE_PANEL_W = 138;
-const CONFIGURE_PANEL_H = 71;
 
 let rand = randCreate(1234);
 
 const KNOBS = [
-  'Frequency',
+  'Depth',
+  'Weather',
+  'Allotropy',
   'Resonance',
-  'Density',
-  'Luminance',
-  'SurvyDpth',
+  'Frequency',
+  'Striation',
 ];
 const NUM_KNOBS = KNOBS.length;
 
-type MineralDef = {
+const CONFIGURE_PANEL_W = 138;
+const CONFIGURE_PANEL_H = 71 - 5 * CHH + NUM_KNOBS * CHH + 4;
+
+type ExoticDef = {
   name: string;
   knobs: number[];
   value: number;
@@ -99,12 +106,12 @@ type MineralDef = {
   knob_order: number[];
 };
 type RecentRecord = {
-  mineral: number;
+  exotic: number;
   knobs: number[];
   value: number;
 };
 
-function randomMineralName(): string {
+function randomExoticName(): string {
   let num_numbers = 1 + rand.range(2);
   let str = [];
   for (let ii = 0; ii < 3 - num_numbers; ++ii) {
@@ -118,6 +125,50 @@ function randomMineralName(): string {
   return str.join('');
 }
 
+function knobKnown(exotic: ExoticDef, idx: number): boolean {
+  return (exotic.knob_order.indexOf(idx)+0.75) < exotic.knowledge;
+}
+
+function matchInfo(exotic: ExoticDef, probe_config: number[]): {
+  exact: number;
+  total: number;
+  min: number;
+  max: number;
+} {
+  let known: Partial<Record<number, boolean>> = {};
+  for (let ii = 0; ii < exotic.knowledge; ++ii) {
+    known[exotic.knob_order[ii]] = true;
+  }
+  let sum_min = 0;
+  let sum_max = 0;
+  let sum_exact = 0;
+  let total = 0;
+  for (let ii = 0; ii < NUM_KNOBS; ++ii) {
+    let probe = probe_config[ii];
+    let desired = exotic.knobs[ii];
+    let diff = abs(probe - desired);
+    if (diff === 2) {
+      ++diff; // 0/1/3
+    }
+    let match = 3 - diff; // 0/2/3
+    let weight = ii < 2 ? 4 : 1;
+    total += weight * 3;
+    sum_exact += match * weight;
+    if (known[ii]) {
+      sum_min += match * weight;
+      sum_max += match * weight;
+    } else {
+      sum_max += 3 * weight;
+    }
+  }
+  return {
+    exact: sum_exact,
+    total,
+    min: sum_min/total,
+    max: sum_max/total,
+  };
+}
+
 class GameState {
 
   game_score = 0;
@@ -128,8 +179,8 @@ class GameState {
   level_score!: number;
   probes_left!: number;
   probe_config!: number[];
-  minerals!: MineralDef[];
-  recent_minerals!: RecentRecord[];
+  exotics!: ExoticDef[];
+  recent_exotics!: RecentRecord[];
   initLevel(seed: number): void {
     rand.reseed(seed);
     this.level_score = 0;
@@ -140,49 +191,267 @@ class GameState {
       this.probe_config.push(1);
     }
 
-    let num_minerals = 4;
-    let minerals: MineralDef[] = [];
-    for (let ii = 0; ii < num_minerals; ++ii) {
-      let mineral: MineralDef = {
-        name: randomMineralName(),
+    let num_exotics = 4;
+    let exotics: ExoticDef[] = [];
+    for (let ii = 0; ii < num_exotics; ++ii) {
+      let exotic: ExoticDef = {
+        name: randomExoticName(),
         knobs: [],
         value: 5 + rand.range(94),
         total_value: ii < 2 ? 77 : 0,
         total_found: ii < 2 ? 1 : 0,
-        knowledge: ii === 0 ? 90 : ii === 1 ? 20 : 0,
+        knowledge: ii === 0 ? KNOBS.length - 2 : ii === 1 ? 1 : 0,
         knob_order: [],
       };
       for (let jj = 0; jj < NUM_KNOBS; ++jj) {
-        mineral.knobs.push(rand.range(3));
-        mineral.knob_order.push(jj);
+        exotic.knobs.push(rand.range(3));
+        exotic.knob_order.push(jj);
       }
-      shuffleArray(rand, mineral.knob_order);
-      minerals.push(mineral);
+      shuffleArray(rand, exotic.knob_order);
+      exotics.push(exotic);
     }
-    this.minerals = minerals;
+    this.exotics = exotics;
 
-    this.recent_minerals = [];
+    this.recent_exotics = [];
+  }
+
+  findExotic(): void {
+    let { exotics, probe_config } = this;
+    let options = [];
+    let total_w = 0;
+    let max_match = 0;
+    for (let ii = 0; ii < exotics.length; ++ii) {
+      let exotic = exotics[ii];
+      let match_info = matchInfo(exotic, probe_config);
+      let w = match_info.exact;
+      max_match = match_info.total;
+      total_w += w;
+      options.push([w, ii]);
+    }
+    let choice;
+    let our_match;
+    if (!total_w) {
+      choice = rand.range(NUM_KNOBS);
+      our_match = 1;
+    } else {
+      let r = rand.range(total_w);
+      choice = 0;
+      while (r >= options[choice][0]) {
+        r -= options[choice][0];
+        choice++;
+      }
+      our_match = options[choice][0];
+      choice = options[choice][1];
+    }
+    let match_perc = our_match / max_match;
+    let exotic = exotics[choice];
+    let base_value = exotic.value;
+    // match   value range
+    //   0       [0.1, 0.5], 0% crit
+    //   0.5         0% crit
+    //   1       [1,2], 10% crit => +0.5..1
+    let a = lerp(match_perc, 0.1, 1);
+    let b = lerp(match_perc, 0.5, 2);
+    let c = max(0, lerp(match_perc, -0.1, 0.1));
+    let v = rand.random() * rand.random() * (b - a) + a;
+    while (rand.random() < c) {
+      v += rand.floatBetween(0.5, 1);
+    }
+
+    // Rearrange if there's an undiscovered in the way
+    while (choice > 0 && !exotics[choice-1].knowledge) {
+      let t = exotics[choice];
+      exotics[choice] = exotics[choice - 1];
+      exotics[choice - 1] = t;
+      --choice;
+    }
+
+    let recent: RecentRecord = {
+      exotic: choice,
+      knobs: probe_config.slice(0),
+      value: ceil(base_value * v),
+    };
+
+    exotic.total_value += recent.value;
+    exotic.total_found++;
+
+    this.recent_exotics.splice(0, 0, recent);
   }
 }
 
 let sprite_toggles: Sprite;
 let game_state: GameState;
+let sprite_dither: Sprite;
+let shader_dither: Shader;
+const dither_uvs = vec4(0, 0, game_width / 4, game_height / 4);
 function init(): void {
   sprite_toggles = spriteCreate({
     name: 'toggles',
     ws: [9, 9, 9],
     hs: [9, 9, 9, 9, 9],
   });
+  sprite_dither = spriteCreate({
+    name: 'dither',
+    wrap_s: gl.REPEAT,
+    wrap_t: gl.REPEAT,
+  });
+  shader_dither = shaderCreate('shaders/dither.fp');
   game_state = new GameState();
+}
+
+function perc(v: number): string {
+  return (v * 100).toFixed(0);
 }
 
 let style_text = fontStyleColored(null, palette_font[PALETTE_TEXT]);
 
 const KNOB_W = 9;
 
+function drawExoticInfoPanel(param: {
+  x: number;
+  y: number;
+  z: number;
+  exotic: ExoticDef;
+  style: string;
+  show_match: boolean;
+  allow_undiscovered: boolean;
+}): number {
+  let { x, y, z, exotic, style, show_match, allow_undiscovered } = param;
+  let font = uiGetFont();
+  let w = INFO_PANEL_W;
+  panel({
+    x, y, z,
+    w,
+    h: INFO_PANEL_H,
+    sprite: autoAtlas('game', style),
+    eat_clicks: false,
+  });
+  z++;
+
+  if (!exotic.knowledge && allow_undiscovered) {
+    font.draw({
+      color: palette_font[1],
+      x, y, z, w,
+      h: INFO_PANEL_H,
+      align: ALIGN.HVCENTER|ALIGN.HWRAP,
+      text: 'Undiscovered\nExotic',
+    });
+  } else {
+    let xx = x + 7;
+    w -= 7 * 2;
+    let yy = y + 5;
+    // TODO: exotic icons
+    font.draw({
+      style: style_text,
+      x: xx,
+      y: yy,
+      z,
+      text: ` ${exotic.name}`,
+    });
+    if (show_match) {
+      let match_info = matchInfo(exotic, game_state.probe_config);
+      font.draw({
+        style: style_text,
+        x: xx,
+        y: yy,
+        z,
+        w,
+        align: ALIGN.HRIGHT,
+        text: match_info.min === match_info.max ? match_info.max === 1 ? '  %' : `${perc(match_info.max)}%` :
+          match_info.max === 1 ? `${perc(match_info.min)}-  %` :
+          `${perc(match_info.min)}-${perc(match_info.max)}%`,
+      });
+      if (match_info.max === 1) {
+        autoAtlas('game', '100').draw({
+          x: xx + w - CHW * 3,
+          y: yy,
+          z,
+          w: 15,
+          h: 7,
+          color: palette[0],
+        });
+      }
+    }
+    yy += LINEH;
+    yy--;
+    drawBox({
+      x: x + 7,
+      y: yy,
+      z,
+      w: INFO_PANEL_W - 7*2,
+      h: 3,
+    }, autoAtlas('game', 'progress_bar'), 1);
+    z++;
+    if (exotic.knowledge) {
+      let bar_w = INFO_PANEL_W - 7*2;
+      if (exotic.knowledge < NUM_KNOBS) {
+        bar_w = floor(exotic.knowledge / NUM_KNOBS * bar_w);
+      }
+      drawBox({
+        x: x + 7,
+        y: yy,
+        z,
+        w: bar_w,
+        h: 3,
+      }, autoAtlas('game', 'progress_fill'), 1);
+    }
+    z++;
+    yy += 4;
+
+    for (let jj = 0; jj < NUM_KNOBS; ++jj) {
+      let xxx = xx + CHW + jj * CHW * 2;
+      font.draw({
+        style: style_text,
+        x: xxx,
+        y: yy,
+        z,
+        text: KNOBS[jj][0],
+      });
+      let known = knobKnown(exotic, jj);
+
+      sprite_toggles.draw({
+        x: xxx - 1,
+        y: yy + CHH,
+        z,
+        w: KNOB_W, h: KNOB_W,
+        frame: known ? exotic.knobs[jj] + 3 : 12,
+      });
+    }
+    yy += LINEH * 2;
+    font.draw({
+      style: style_text,
+      x: xx,
+      y: yy,
+      z,
+      text: `Avg Val: $${round(exotic.total_value / exotic.total_found)}`,
+    });
+    yy += LINEH;
+  }
+  y += INFO_PANEL_H;
+  return y;
+}
+
+
+const CONFIG_TRANSITION_IN_TIME = engine.DEBUG ? 60 : 600;
+let transition_time = 0;
+
 function stateDroneConfig(dt: number): void {
   let font = uiGetFont();
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
+
+  let disabled = false;
+  if (transition_time) {
+    transition_time = max(transition_time - dt, 0);
+    if (transition_time) {
+      drawMiningConclusion(transition_time / CONFIG_TRANSITION_IN_TIME);
+      disabled = true;
+    }
+  }
+
+  if (!transition_time) {
+    // eslint-disable-next-line
+    disabled = doMiningResult(dt);
+  }
 
   let x = (game_width - CONFIGURE_PANEL_W) / 2;
   let y = 18;
@@ -198,7 +467,7 @@ function stateDroneConfig(dt: number): void {
   y += 8;
 
   font.draw({
-    text: 'Configure Probe',
+    text: 'Configure DWARF',
     style: style_text,
     align: ALIGN.HCENTER,
     x, y,
@@ -208,7 +477,7 @@ function stateDroneConfig(dt: number): void {
 
   x += 7;
   w -= 7 * 2;
-  let { probe_config, minerals } = game_state;
+  let { probe_config, exotics } = game_state;
   for (let ii = 0; ii < NUM_KNOBS; ++ii) {
     font.draw({
       style: style_text,
@@ -223,7 +492,7 @@ function stateDroneConfig(dt: number): void {
         h: KNOB_W,
         no_bg: true,
         text: ' ',
-        disabled: probe_config[ii] === jj,
+        disabled: probe_config[ii] === jj || disabled,
       });
       if (ret) {
         probe_config[ii] = jj;
@@ -237,6 +506,9 @@ function stateDroneConfig(dt: number): void {
       xx += KNOB_W;
     }
     y += LINEH;
+    if (ii === 1) {
+      y += 4;
+    }
   }
 
   w = INFO_PANEL_W;
@@ -246,95 +518,23 @@ function stateDroneConfig(dt: number): void {
   font.draw({
     color: palette_font[3],
     x, y, z, w,
-    text: 'Minerals',
+    text: 'Exotics',
     align: ALIGN.HCENTER,
   });
   y += LINEH;
-  for (let ii = 0; ii < minerals.length; ++ii) {
-    let mineral = minerals[ii];
+  for (let ii = 0; ii < exotics.length; ++ii) {
+    let exotic = exotics[ii];
     z = Z.UI;
-    w = INFO_PANEL_W;
-    panel({
-      x, y, z,
-      w,
-      h: INFO_PANEL_H,
-      sprite: autoAtlas('game', ii === 0 ? 'panel_info' : 'panel_info_overlay'),
-      eat_clicks: false,
+
+    y = drawExoticInfoPanel({
+      x, y,
+      z: Z.UI,
+      exotic,
+      style: ii === 0 ? 'panel_info' : 'panel_info_overlay',
+      show_match: true,
+      allow_undiscovered: true
     });
-    z++;
-
-    if (!mineral.knowledge) {
-      font.draw({
-        color: palette_font[1],
-        x, y, z, w,
-        h: INFO_PANEL_H,
-        align: ALIGN.HVCENTER|ALIGN.HWRAP,
-        text: 'Undiscovered\nMineral',
-      });
-    } else {
-      let xx = x + 7;
-      w -= 7 * 2;
-      let yy = y + 5;
-      // TODO: mineral icons
-      font.draw({
-        style: style_text,
-        x: xx,
-        y: yy,
-        z,
-        text: ` ${mineral.name}`,
-      });
-      yy += LINEH;
-      yy--;
-      drawBox({
-        x: x + 7,
-        y: yy,
-        z,
-        w: INFO_PANEL_W - 7*2,
-        h: 3,
-      }, autoAtlas('game', 'progress_bar'), 1);
-      z++;
-      if (mineral.knowledge) {
-        let bar_w = INFO_PANEL_W - 7*2;
-        if (mineral.knowledge < 100) {
-          bar_w = floor(mineral.knowledge / 100 * bar_w);
-        }
-        drawBox({
-          x: x + 7,
-          y: yy,
-          z,
-          w: bar_w,
-          h: 3,
-        }, autoAtlas('game', 'progress_fill'), 1);
-      }
-      z++;
-      yy += 4;
-
-      for (let jj = 0; jj < NUM_KNOBS; ++jj) {
-        let xxx = xx + CHW + jj * CHW * 2;
-        font.draw({
-          style: style_text,
-          x: xxx,
-          y: yy,
-          text: KNOBS[jj][0],
-        });
-        let known = 'todo';
-        sprite_toggles.draw({
-          x: xxx - 1,
-          y: yy + CHH,
-          w: KNOB_W, h: KNOB_W,
-          frame: known ? mineral.knobs[jj] + 3 : 12,
-        });
-      }
-      yy += LINEH * 2;
-      font.draw({
-        style: style_text,
-        x: xx,
-        y: yy,
-        text: `Avg Val: $${round(mineral.total_value / mineral.total_found)}`,
-      });
-      yy += LINEH;
-    }
-    y += INFO_PANEL_H - 5;
+    y -= 5;
   }
 
   // TODO: recent results
@@ -342,14 +542,17 @@ function stateDroneConfig(dt: number): void {
   let button_w = 95;
   y = 164;
   z = Z.UI;
-  if (buttonText({
-    x: floor((game_width - button_w)/2),
-    y, z,
-    w: button_w,
-    text: game_state.probes_left ? 'LAUNCH!' : 'Next Planet',
-  })) {
-    game_state.probes_left--;
-    startMining(); // eslint-disable-line @typescript-eslint/no-use-before-define
+  if (!disabled) {
+    if (buttonText({
+      x: floor((game_width - button_w)/2),
+      y, z,
+      w: button_w,
+      disabled,
+      text: game_state.probes_left ? 'LAUNCH!' : 'Next Planet',
+    })) {
+      game_state.probes_left--;
+      startMining();
+    }
   }
   y += uiButtonHeight() + 2;
   font.draw({
@@ -373,64 +576,316 @@ let mining_state: {
   danger: number;
   danger_target: number;
   danger_target_time: number;
+  done: boolean;
 };
+
+let mining_result_state: {
+  stage: string; // study, stud_anim, choice, dismantle_anim, sell_anim
+  is_new: boolean;
+  t: number;
+  knowledge_start: number;
+  done: boolean;
+  value_given: number;
+};
+const RESULT_W = INFO_PANEL_W + 40;
+const STUDY_ANIM_TIME = 1000;
+const SELL_ANIM_TIME = 1000;
+let mr_ymax = 0;
+function doMiningResult(dt: number): boolean {
+  let font = uiGetFont();
+  if (!mining_state || mining_state.stress >= 1) {
+    return false;
+  }
+
+  let { recent_exotics, exotics } = game_state;
+  let recent = recent_exotics[0];
+  let exotic = exotics[recent.exotic];
+  let knowledge = exotic.knowledge;
+  if (autoResetSkippedFrames('mining_result')) {
+    mining_result_state = {
+      is_new: knowledge === 0,
+      stage: knowledge === NUM_KNOBS ? 'choice' : 'study',
+      t: 0,
+      knowledge_start: knowledge,
+      done: false,
+      value_given: 0,
+    };
+  }
+  if (mining_result_state.done) {
+    return false;
+  }
+
+  mining_result_state.t += dt;
+
+  if (mining_result_state.stage === 'study_anim' || mining_result_state.stage === 'dismantle_anim') {
+    if (mining_result_state.t >= STUDY_ANIM_TIME) {
+      exotic.knowledge = mining_result_state.knowledge_start + 1;
+      if (mining_result_state.stage === 'dismantle_anim') {
+        // delay closing?
+        mining_result_state.done = true;
+      } else {
+        mining_result_state.stage = 'choice';
+        mining_result_state.t = 0;
+      }
+    } else {
+      exotic.knowledge = mining_result_state.knowledge_start + mining_result_state.t / STUDY_ANIM_TIME;
+    }
+  }
+  if (mining_result_state.stage === 'sell_anim') {
+    let expected_given = floor(recent.value * min(mining_result_state.t / SELL_ANIM_TIME, 1));
+    let left = expected_given - mining_result_state.value_given;
+    mining_result_state.value_given = expected_given;
+    game_state.level_score += left;
+    game_state.game_score += left;
+    if (mining_result_state.t >= SELL_ANIM_TIME) {
+      mining_result_state.done = true;
+    }
+  }
+  if (mining_result_state.stage === 'choice' && exotic.knowledge === NUM_KNOBS) {
+    mining_result_state.stage = 'sell_anim';
+    mining_result_state.t = 0;
+  }
+
+  let x = floor((game_width - RESULT_W)/2);
+  const x0 = x;
+  let y = 30;
+  const y0 = y;
+  let z = Z.UI + 100;
+  const z0 = z;
+  x += 7;
+  let w = RESULT_W - 7 * 2;
+  y += 7;
+  z++;
+
+  y += font.draw({
+    style: style_text,
+    x, y, z,
+    w,
+    align: ALIGN.HCENTER | ALIGN.HWRAP,
+    text: mining_result_state.is_new ? 'Sample of new Exotic found!' :
+      'Exotic retrieved!',
+  }) + 1;
+
+  y = drawExoticInfoPanel({
+    style: 'panel_info',
+    x: x + floor((w - INFO_PANEL_W)/2),
+    y, z,
+    exotic,
+    show_match: false,
+    allow_undiscovered: false,
+  }) + 2;
+
+  font.draw({
+    style: style_text,
+    x, y, z,
+    w,
+    align: ALIGN.HCENTER,
+    text: `Value: $${recent.value}`,
+  });
+  y += LINEH + 2;
+
+  let button_w = 95;
+  if (mining_result_state.stage === 'study') {
+    if (buttonText({
+      x: x + floor((w - button_w)/2),
+      y: y,
+      z,
+      w: button_w,
+      text: 'STUDY',
+    })) {
+      mining_result_state.stage = 'study_anim';
+      mining_result_state.t = 0;
+    }
+    y += uiButtonHeight() + 2;
+    y += font.draw({
+      color: palette_font[1],
+      x, y, z,
+      w,
+      align: ALIGN.HCENTER | ALIGN.HWRAP,
+      text: 'Learn more about the affinities of this Exotic.',
+    }) + 1;
+  } else if (
+    mining_result_state.stage === 'study_anim' ||
+    mining_result_state.stage === 'dismantle_anim' ||
+    mining_result_state.stage === 'sell_anim'
+  ) {
+    y += 12;
+    y += font.draw({
+      color: palette_font[1],
+      x, y, z,
+      w,
+      align: ALIGN.HCENTER | ALIGN.HWRAP,
+      text: mining_result_state.stage === 'study_anim' ? 'Studying...' :
+        mining_result_state.stage === 'dismantle_anim' ? 'Dismantling...' :
+        'Selling...',
+    }) + 1;
+  } else if (mining_result_state.stage === 'choice') {
+    if (buttonText({
+      x: x + floor((w - button_w)/2),
+      y: y,
+      z,
+      w: button_w,
+      text: 'DISMANTLE',
+    })) {
+      mining_result_state.stage = 'dismantle_anim';
+      mining_result_state.knowledge_start = exotic.knowledge;
+      mining_result_state.t = 0;
+    }
+    y += uiButtonHeight() + 2;
+    y += font.draw({
+      color: palette_font[1],
+      x, y, z,
+      w,
+      align: ALIGN.HCENTER | ALIGN.HWRAP,
+      text: 'Destroy this Exotic to learn even more.',
+    }) + 1;
+
+    y += 2;
+    if (buttonText({
+      x: x + floor((w - button_w)/2),
+      y: y,
+      z,
+      w: button_w,
+      text: 'SELL',
+    })) {
+      mining_result_state.stage = 'sell_anim';
+      mining_result_state.t = 0;
+    }
+    y += uiButtonHeight() + 2;
+    y += font.draw({
+      color: palette_font[1],
+      x, y, z,
+      w,
+      align: ALIGN.HCENTER | ALIGN.HWRAP,
+      text: `Sell this Exotic for $${recent.value}.`,
+    }) + 1;
+  }
+
+  y += 7;
+  mr_ymax = max(y, mr_ymax);
+  panel({
+    x: x0,
+    y: y0,
+    z: z0,
+    w: RESULT_W,
+    h: mr_ymax - y0,
+  });
+
+  return true;
+}
 
 const BAR_LONG_SIZE = 120;
 const BAR_SHORT_SIZE = 10;
+const MINING_TRANSITION_OUT_TIME = CONFIG_TRANSITION_IN_TIME;
+function drawMiningConclusion(v: number): void {
+  let z = Z.UI + 100;
+  sprite_dither.draw({
+    x: 0, y: 0, z,
+    w: game_width, h: game_height,
+    shader: shader_dither,
+    shader_params: {
+      dither_param: [min(1, v)],
+    },
+    color: palette[0],
+    uvs: dither_uvs,
+  });
+  z++;
+  const FINISH_W = 200;
+  const FINISH_H = 100;
+
+  panel({
+    x: floor((game_width - FINISH_W) / 2),
+    y: floor((game_height - FINISH_H) / 2),
+    z,
+    w: FINISH_W,
+    h: FINISH_H,
+  });
+  z++;
+  uiGetFont().draw({
+    style: style_text,
+    x: 0,
+    y: 0,
+    z,
+    w: game_width,
+    h: game_height,
+    align: ALIGN.HVCENTER | ALIGN.HWRAP,
+    size: uiTextHeight() * 2,
+    text: mining_state.stress >= 1 ? 'DWARF LOST' : 'MINING\nSUCCESS',
+  });
+}
 let over_danger_time = 0;
 function stateMine(dt: number): void {
   dt = min(dt, 200);
   let font = uiGetFont();
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
 
-
-  if (keyDown(KEYS.SPACE) || mouseDownAnywhere()) {
-    mining_state.accel += dt * 0.01;
-  } else {
-    mining_state.accel -= dt * 0.01;
-  }
-  mining_state.accel = clamp(mining_state.accel, -1, 1);
-
-  mining_state.speed += mining_state.accel * dt * 0.0005;
-  mining_state.speed = clamp(mining_state.speed, 0, 1);
-  if (!mining_state.speed) {
-    mining_state.accel = 0;
-  } else if (mining_state.speed === 1) {
-    mining_state.accel = 0;
-  }
-
-  let dprogress = mining_state.speed * dt * 0.0001;
-  mining_state.progress += dprogress;
+  let do_accel = keyDown(KEYS.SPACE) || mouseDownAnywhere();
   let maxp = (0.5 + game_state.probe_config[4] * 0.5);
-  mining_state.progress = clamp(mining_state.progress, 0, maxp);
-
-  if (mining_state.progress === maxp) {
-    // TODO: win!
-    engine.setState(stateDroneConfig);
-  } else {
-    if (mining_state.progress >= mining_state.danger_target_time) {
-      mining_state.danger = mining_state.danger_target;
-      mining_state.danger_target_time += rand.floatBetween(0.05, 0.15);
-      mining_state.danger_target = rand.floatBetween(0, 0.9);
+  let do_flicker = false;
+  if (mining_state.done) {
+    transition_time += dt;
+    transition_time = min(transition_time, MINING_TRANSITION_OUT_TIME);
+    drawMiningConclusion(transition_time / MINING_TRANSITION_OUT_TIME);
+    if (transition_time >= MINING_TRANSITION_OUT_TIME && !do_accel) {
+      engine.setState(stateDroneConfig);
+      transition_time = CONFIG_TRANSITION_IN_TIME;
     }
-    let time_to_target = mining_state.danger_target_time - mining_state.progress;
-    if (time_to_target > 0) {
-      let danger_to_target = mining_state.danger_target - mining_state.danger;
-      mining_state.danger += dprogress / time_to_target * danger_to_target;
-    }
-  }
-
-  let over_danger = max(0, mining_state.speed - (1 - mining_state.danger));
-  if (over_danger) {
-    over_danger = 0.1 + over_danger;
-    mining_state.stress += over_danger * 0.001 * dt;
-    over_danger_time += dt;
   } else {
-    over_danger_time = 0;
-  }
-  if (mining_state.stress >= 1) {
-    // TODO: crash!
-    engine.setState(stateDroneConfig);
+    if (do_accel) {
+      mining_state.accel += dt * 0.01;
+    } else {
+      mining_state.accel -= dt * 0.01;
+    }
+    mining_state.accel = clamp(mining_state.accel, -1, 1);
+
+    mining_state.speed += mining_state.accel * dt * 0.0005;
+    mining_state.speed = clamp(mining_state.speed, 0, 1);
+    if (!mining_state.speed) {
+      mining_state.accel = 0;
+    } else if (mining_state.speed === 1) {
+      mining_state.accel = 0;
+    }
+
+    let dprogress = mining_state.speed * dt * 0.0001;
+    if (engine.DEBUG && keyDown(KEYS.W) || true) {
+      dprogress += dt * 0.01;
+    }
+    mining_state.progress += dprogress;
+    mining_state.progress = clamp(mining_state.progress, 0, maxp);
+
+    if (mining_state.progress === maxp) {
+      mining_state.done = true;
+      game_state.findExotic();
+      transition_time = 0;
+    } else {
+      if (mining_state.progress >= mining_state.danger_target_time) {
+        mining_state.danger_target_time += rand.floatBetween(0.05, 0.15);
+        mining_state.danger_target = rand.floatBetween(0, 0.9);
+      }
+      let time_to_target = mining_state.danger_target_time - mining_state.progress;
+      if (time_to_target > 0) {
+        let danger_to_target = mining_state.danger_target - mining_state.danger;
+        mining_state.danger += min(dprogress / time_to_target, 1) * danger_to_target;
+      }
+    }
+
+    let over_danger = max(0, mining_state.speed - (1 - mining_state.danger));
+    if (over_danger && !mining_state.done) {
+      over_danger = 0.1 + over_danger;
+      mining_state.stress += over_danger * 0.001 * dt;
+      mining_state.stress = clamp(mining_state.stress, 0, 1);
+      over_danger_time += dt;
+      do_flicker = true;
+    } else {
+      over_danger_time = 0;
+    }
+    if (engine.DEBUG && keyDown(KEYS.L)) {
+      mining_state.stress += dt * 0.01;
+    }
+    if (mining_state.stress >= 1) {
+      mining_state.done = true;
+      transition_time = 0;
+    }
   }
 
   function drawHBar(x: number, y: number, label: string, p: number): void {
@@ -538,7 +993,7 @@ function stateMine(dt: number): void {
   drawHBar(hbar_x, 174, 'Stress', mining_state.stress);
   let vbar_y = 42;
   let vbar_xoffs = 12;
-  let flicker = over_danger ? over_danger_time % 200 < 100 : false;
+  let flicker = do_flicker ? over_danger_time % 200 < 100 : false;
   drawVBar(flicker ? 'vbar' : 'vbar2', 268 + vbar_xoffs, vbar_y, 'Speed', mining_state.speed);
   drawVBar(flicker ? 'vbar2' : 'vbar', game_width - BAR_SHORT_SIZE - 4*2 - 36 + vbar_xoffs, vbar_y,
     'Safety', 1 - mining_state.danger);
@@ -555,6 +1010,7 @@ function startMining(): void {
     danger: 0,
     danger_target: danger_init,
     danger_target_time: 0.1,
+    done: false,
   };
 }
 
