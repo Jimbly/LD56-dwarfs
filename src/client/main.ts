@@ -5,7 +5,16 @@ local_storage.setStoragePrefix('LD56'); // Before requiring anything else that m
 
 import { autoAtlas } from 'glov/client/autoatlas';
 import * as engine from 'glov/client/engine';
-import { ALIGN, fontStyleColored, vec4ColorFromIntColor } from 'glov/client/font';
+import {
+  ALIGN,
+  fontStyleColored,
+  vec4ColorFromIntColor,
+} from 'glov/client/font';
+import {
+  KEYS,
+  keyDown,
+  mouseDownAnywhere,
+} from 'glov/client/input';
 import { netInit } from 'glov/client/net';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import {
@@ -18,6 +27,8 @@ import {
   buttonText,
   buttonWasFocused,
   drawBox,
+  drawHBox,
+  drawVBox,
   panel,
   scaleSizes,
   setButtonHeight,
@@ -30,14 +41,14 @@ import {
   randCreate,
   shuffleArray,
 } from 'glov/common/rand_alea';
-import { plural } from 'glov/common/util';
+import { clamp, plural } from 'glov/common/util';
 import {
   unit_vec,
   v4copy,
   vec4,
 } from 'glov/common/vmath';
 
-const { floor, round } = Math;
+const { ceil, floor, max, min, round } = Math;
 
 const palette_font = [
   0x081820ff,
@@ -74,7 +85,7 @@ const KNOBS = [
   'Resonance',
   'Density',
   'Luminance',
-  'Lnch Dpth',
+  'SurvyDpth',
 ];
 const NUM_KNOBS = KNOBS.length;
 
@@ -328,16 +339,17 @@ function stateDroneConfig(dt: number): void {
 
   // TODO: recent results
 
-  let button_w = 65;
+  let button_w = 95;
   y = 164;
   z = Z.UI;
   if (buttonText({
     x: floor((game_width - button_w)/2),
     y, z,
     w: button_w,
-    text: 'LAUNCH!',
+    text: game_state.probes_left ? 'LAUNCH!' : 'Next Planet',
   })) {
-    // TODO
+    game_state.probes_left--;
+    startMining(); // eslint-disable-line @typescript-eslint/no-use-before-define
   }
   y += uiButtonHeight() + 2;
   font.draw({
@@ -351,6 +363,199 @@ function stateDroneConfig(dt: number): void {
   // TODO: game_score
   // TODO: level_score
   // TODO: survey bonus
+}
+
+let mining_state: {
+  progress: number;
+  speed: number;
+  accel: number;
+  stress: number;
+  danger: number;
+  danger_target: number;
+  danger_target_time: number;
+};
+
+const BAR_LONG_SIZE = 120;
+const BAR_SHORT_SIZE = 10;
+let over_danger_time = 0;
+function stateMine(dt: number): void {
+  dt = min(dt, 200);
+  let font = uiGetFont();
+  gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
+
+
+  if (keyDown(KEYS.SPACE) || mouseDownAnywhere()) {
+    mining_state.accel += dt * 0.01;
+  } else {
+    mining_state.accel -= dt * 0.01;
+  }
+  mining_state.accel = clamp(mining_state.accel, -1, 1);
+
+  mining_state.speed += mining_state.accel * dt * 0.0005;
+  mining_state.speed = clamp(mining_state.speed, 0, 1);
+  if (!mining_state.speed) {
+    mining_state.accel = 0;
+  } else if (mining_state.speed === 1) {
+    mining_state.accel = 0;
+  }
+
+  let dprogress = mining_state.speed * dt * 0.0001;
+  mining_state.progress += dprogress;
+  let maxp = (0.5 + game_state.probe_config[4] * 0.5);
+  mining_state.progress = clamp(mining_state.progress, 0, maxp);
+
+  if (mining_state.progress === maxp) {
+    // TODO: win!
+    engine.setState(stateDroneConfig);
+  } else {
+    if (mining_state.progress >= mining_state.danger_target_time) {
+      mining_state.danger = mining_state.danger_target;
+      mining_state.danger_target_time += rand.floatBetween(0.05, 0.15);
+      mining_state.danger_target = rand.floatBetween(0, 0.9);
+    }
+    let time_to_target = mining_state.danger_target_time - mining_state.progress;
+    if (time_to_target > 0) {
+      let danger_to_target = mining_state.danger_target - mining_state.danger;
+      mining_state.danger += dprogress / time_to_target * danger_to_target;
+    }
+  }
+
+  let over_danger = max(0, mining_state.speed - (1 - mining_state.danger));
+  if (over_danger) {
+    over_danger = 0.1 + over_danger;
+    mining_state.stress += over_danger * 0.001 * dt;
+    over_danger_time += dt;
+  } else {
+    over_danger_time = 0;
+  }
+  if (mining_state.stress >= 1) {
+    // TODO: crash!
+    engine.setState(stateDroneConfig);
+  }
+
+  function drawHBar(x: number, y: number, label: string, p: number): void {
+    let z = Z.UI;
+    let w = BAR_LONG_SIZE;
+    let text_w = font.draw({
+      style: style_text,
+      x,
+      y: y + 6,
+      z: z + 1,
+      w,
+      align: ALIGN.HCENTER,
+      text: label,
+    });
+    text_w += 7 * 2;
+    panel({
+      x: x + floor((BAR_LONG_SIZE - text_w)/2),
+      y,
+      z,
+      w: text_w,
+      h: CHH + 18,
+    });
+    y += CHH + 7;
+    z+=2;
+    panel({
+      x: x - 4,
+      y, z,
+      w: w + 4*2,
+      h: BAR_SHORT_SIZE + 4 * 2,
+    });
+    z++;
+    y += 4;
+    drawHBox({
+      x, y, z,
+      w: BAR_LONG_SIZE,
+      h: BAR_SHORT_SIZE,
+    }, autoAtlas('game', 'hbar_base'));
+    let fill_w = clamp(round(8 + p * (BAR_LONG_SIZE - 8)), 1, BAR_LONG_SIZE);
+    if (p < 1 && fill_w > BAR_LONG_SIZE - 1) {
+      fill_w = BAR_LONG_SIZE - 1;
+    }
+    z++;
+    drawHBox({
+      x, y, z,
+      w: fill_w,
+      h: BAR_SHORT_SIZE,
+    }, autoAtlas('game', 'hbar_fill'));
+  }
+
+  function drawVBar(style: string, x: number, y: number, label: string, p: number): void {
+    let z = Z.UI;
+    let h = BAR_LONG_SIZE;
+    panel({
+      x: x - 4,
+      y, z,
+      w: BAR_SHORT_SIZE + 4*2,
+      h: h + 4 * 2,
+    });
+    z++;
+    y += 4;
+    drawVBox({
+      x, y, z,
+      w: BAR_SHORT_SIZE,
+      h: BAR_LONG_SIZE,
+    }, autoAtlas('game', `${style}_base`));
+    let fill_w = clamp(round(8 + p * (BAR_LONG_SIZE - 8)), 1, BAR_LONG_SIZE);
+    if (p < 1 && fill_w > BAR_LONG_SIZE - 1) {
+      fill_w = BAR_LONG_SIZE - 1;
+    }
+    z++;
+    drawVBox({
+      x,
+      y: y + BAR_LONG_SIZE - fill_w,
+      z,
+      w: BAR_SHORT_SIZE,
+      h: fill_w,
+    }, autoAtlas('game', `${style}_fill`));
+    y += BAR_LONG_SIZE + 3;
+
+    let x_mid = x + BAR_SHORT_SIZE/2;
+    let text_w = font.draw({
+      style: style_text,
+      x: x_mid,
+      y: y + 6,
+      z: z + 1,
+      w: 0,
+      align: ALIGN.HCENTER,
+      text: label,
+    });
+    text_w += 7 * 2;
+    panel({
+      x: x_mid - ceil(text_w/2),
+      y,
+      z,
+      w: text_w,
+      h: CHH + 11,
+    });
+    y += CHH + 7;
+    z+=2;
+  }
+
+  let hbar_x = (game_width - BAR_LONG_SIZE) / 2;
+  // let hbar_x = 64;
+  drawHBar(hbar_x, 8, 'Progress', mining_state.progress / maxp);
+  drawHBar(hbar_x, 174, 'Stress', mining_state.stress);
+  let vbar_y = 42;
+  let vbar_xoffs = 12;
+  let flicker = over_danger ? over_danger_time % 200 < 100 : false;
+  drawVBar(flicker ? 'vbar' : 'vbar2', 268 + vbar_xoffs, vbar_y, 'Speed', mining_state.speed);
+  drawVBar(flicker ? 'vbar2' : 'vbar', game_width - BAR_SHORT_SIZE - 4*2 - 36 + vbar_xoffs, vbar_y,
+    'Safety', 1 - mining_state.danger);
+}
+
+function startMining(): void {
+  engine.setState(stateMine);
+  let danger_init = rand.floatBetween(0.25, 0.75);
+  mining_state = {
+    progress: 0,
+    speed: 0,
+    accel: 0,
+    stress: 0,
+    danger: 0,
+    danger_target: danger_init,
+    danger_target_time: 0.1,
+  };
 }
 
 export function main(): void {
@@ -396,4 +601,7 @@ export function main(): void {
   init();
 
   engine.setState(stateDroneConfig);
+  if (engine.DEBUG) {
+    startMining();
+  }
 }

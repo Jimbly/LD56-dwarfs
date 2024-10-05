@@ -30,7 +30,12 @@ Gas Giant
     launch depth high/med/low alt?
     launch region: stormy / windy / calm?
   Launch! button
-
+  Mining screen
+    adjust speed
+    view progress
+    view stress
+    view danger
+    visuals while descending
 
 Ideas:
 # Gas Giant Surveying
