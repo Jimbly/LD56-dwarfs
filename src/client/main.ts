@@ -517,22 +517,31 @@ function drawExoticInfoPanel(param: {
 }
 
 let bg_time = 0;
+let bg_dither_uvs = vec4();
 function drawBG(dt: number, h: number): void {
   bg_time += dt;
+  let time_scale = 0.0005;
+  let zoom = 1024*2;
+  let h_scale = 2;
+  let hoffs = round(h * h_scale * game_height);
+  let uv_scale_y = game_height/zoom/dither_uvs[3];
+  v4copy(bg_dither_uvs, dither_uvs);
+  bg_dither_uvs[1] += hoffs/4;
+  bg_dither_uvs[3] += hoffs/4;
   sprite_dither.draw({
     x: 0, y: 0, z: 1,
     w: game_width, h: game_height,
     shader: shader_gas_giant,
     shader_params: {
-      params: [1, 1, 1, bg_time/1000],
-      uvscale: [game_width/2048/dither_uvs[2], game_height/1024/dither_uvs[3], 0.1, h * 0.5],
+      params: [1, 1, 1, bg_time * time_scale],
+      uvscale: [game_width/(2*zoom)/dither_uvs[2], uv_scale_y, 0.1, 0],
       c0: palette[0],
       c1: palette[1],
       c2: palette[2],
       c3: palette[3],
     },
     color: palette[0],
-    uvs: dither_uvs,
+    uvs: bg_dither_uvs,
   });
 
 }
@@ -1312,7 +1321,7 @@ export function main(): void {
   init();
 
   engine.setState(stateDroneConfig);
-  if (engine.DEBUG && false) {
+  if (engine.DEBUG && true) {
     startMining();
   }
 }
