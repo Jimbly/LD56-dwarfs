@@ -57,7 +57,7 @@ import {
   randCreate,
   shuffleArray,
 } from 'glov/common/rand_alea';
-import { clamp, lerp, plural } from 'glov/common/util';
+import { clamp, lerp, map01, plural } from 'glov/common/util';
 import {
   unit_vec,
   v4copy,
@@ -518,12 +518,20 @@ function drawExoticInfoPanel(param: {
 
 let bg_time = 0;
 let bg_dither_uvs = vec4();
+let bg_xoffs = 0;
 function drawBG(dt: number, h: number): void {
+  let xoffs = h ? -90 : 0;
+  if (h) {
+    bg_xoffs = lerp(dt/1000, bg_xoffs, xoffs);
+  } else {
+    bg_xoffs = xoffs;
+  }
   bg_time += dt;
   let time_scale = 0.0005;
   let zoom = 1024*2;
   let h_scale = 2;
-  let hoffs = round(h * h_scale * game_height);
+  let hoffs_float = h * h_scale * game_height;
+  let hoffs = round(hoffs_float);
   let uv_scale_y = game_height/zoom/dither_uvs[3];
   v4copy(bg_dither_uvs, dither_uvs);
   bg_dither_uvs[1] += hoffs/4;
@@ -542,6 +550,26 @@ function drawBG(dt: number, h: number): void {
     },
     color: palette[0],
     uvs: bg_dither_uvs,
+  });
+
+  let blimp_y_base = 100 - hoffs_float*3;
+  let blimp_y = blimp_y_base + Math.sin(getFrameTimestamp() * 0.005) * 4;
+  autoAtlas('game', 'blimp').draw({
+    x: 157 + bg_xoffs,
+    y: blimp_y,
+    z: 3,
+    w: 80,
+    h: 37,
+  });
+
+  let probe_y = blimp_y + 33 + hoffs_float*3;
+  probe_y -= round(clamp(map01(hoffs_float, 0, game_height * 0.25), 0, 1) * 40);
+  autoAtlas('game', `probe${h ? floor(getFrameTimestamp() / 50) % 4 + 1 : 1}`).draw({
+    x: 157 + 29 + bg_xoffs,
+    y: probe_y,
+    z: 3,
+    w: 25,
+    h: 29,
   });
 
 }
@@ -593,7 +621,7 @@ function stateDroneConfig(dt: number): void {
   }
 
   let x = (game_width - CONFIGURE_PANEL_W) / 2;
-  let y = 18;
+  let y = 14;
   let z = Z.UI;
   let w = CONFIGURE_PANEL_W;
   panel({
@@ -1063,7 +1091,7 @@ function drawMiningConclusion(v: number): void {
     h: game_height,
     align: ALIGN.HVCENTER | ALIGN.HWRAP,
     size: uiTextHeight() * 2,
-    text: mining_state.stress >= 1 ? 'DWARF LOST' : 'MINING\nSUCCESS',
+    text: mining_state.stress >= 1 ? 'DWARF LOST' : 'EXTRACTION\nSUCCESS',
   });
 }
 let over_danger_time = 0;
@@ -1250,12 +1278,11 @@ function stateMine(dt: number): void {
   let hbar_x = (game_width - BAR_LONG_SIZE) / 2;
   // let hbar_x = 64;
   drawHBar(hbar_x, 8, 'Progress', mining_state.progress / maxp);
-  let vbar_y = 42;
-  let vbar_xoffs = 12;
+  let vbar_y = 54;
   let flicker = do_flicker ? over_danger_time % 200 < 100 : false;
-  let x1 = 268 + vbar_xoffs;
-  let x2 = game_width - BAR_SHORT_SIZE - 4*2 - 36 + vbar_xoffs;
-  let x0 = x1 - (x2 - x1);
+  let x0 = 186;
+  let x1 = x0 + 59;
+  let x2 = x1 + 59;
   let armor_flicker = mining_state.stress > 0.9 ? getFrameTimestamp() % 200 < 100 : false;
   drawVBar(armor_flicker ? 'vbar' : 'vbar2', x0, vbar_y, 'Armor', 1 - mining_state.stress);
   drawVBar(flicker ? 'vbar' : 'vbar2', x1, vbar_y, 'Speed', mining_state.speed);
@@ -1321,7 +1348,7 @@ export function main(): void {
   init();
 
   engine.setState(stateDroneConfig);
-  if (engine.DEBUG && true) {
+  if (engine.DEBUG && false) {
     startMining();
   }
 }
