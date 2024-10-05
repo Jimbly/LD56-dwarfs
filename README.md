@@ -13,7 +13,16 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
-Gas Giant
+Theming
+  Dwaves and armor?
+Polish
+  Tooltips on DWARFS especially
+FTUE
+  No configuration on first probe
+  If they fail, "let's try that again", and refund the probe
+  Explain DWARFS after first successful probe
+
+Gas Giant Game Plan
   Stats:
     Rare minerals (4 per world?)
       % surveyed
@@ -36,8 +45,6 @@ Gas Giant
     view stress
     view danger
     visuals while descending
-  FTUE
-    No configuration on first probe
 
 Ideas:
 # Gas Giant Surveying

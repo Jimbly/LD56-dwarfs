@@ -6,7 +6,11 @@ local_storage.setStoragePrefix('LD56'); // Before requiring anything else that m
 
 import { autoResetSkippedFrames } from 'glov/client/auto_reset';
 import { autoAtlas } from 'glov/client/autoatlas';
+import * as camera2d from 'glov/client/camera2d';
 import * as engine from 'glov/client/engine';
+import {
+  getFrameIndex,
+} from 'glov/client/engine';
 import {
   ALIGN,
   fontStyleColored,
@@ -23,8 +27,11 @@ import { spriteSetGet } from 'glov/client/sprite_sets';
 import {
   Shader,
   Sprite,
+  Texture,
   spriteCreate,
+  spriteQueueRaw4,
 } from 'glov/client/sprites';
+import * as transition from 'glov/client/transition';
 import {
   button,
   buttonSetDefaultYOffs,
@@ -81,6 +88,16 @@ const game_height = 216;
 const INFO_PANEL_W = 118;
 const INFO_PANEL_H = 49;
 
+const GOAL_SCORE = 75000;
+
+// Mining minigame balance
+const MIN_PROGRESS = 0.01; // if speed=0, still advance Danger by this much progress
+const PROGRESS_SPEED = 0.0001;
+const ACCEL_MAX = 0.0005;
+const ACCEL_SPEED = 0.01;
+const DAMAGE_RATE = 0.001;
+
+
 let rand = randCreate(1234);
 
 const KNOBS = [
@@ -126,7 +143,7 @@ function randomExoticName(): string {
 }
 
 function knobKnown(exotic: ExoticDef, idx: number): boolean {
-  return (exotic.knob_order.indexOf(idx)+0.75) < exotic.knowledge;
+  return (exotic.knob_order.indexOf(idx)+0.5) < exotic.knowledge;
 }
 
 function matchInfo(exotic: ExoticDef, probe_config: number[]): {
@@ -171,20 +188,43 @@ function matchInfo(exotic: ExoticDef, probe_config: number[]): {
 
 class GameState {
 
+  level_idx = 1;
   game_score = 0;
   constructor() {
     this.initLevel(1234);
+    if (engine.DEBUG) {
+      for (let ii = 0; ii < 24; ++ii) {
+        this.findExoticDebug();
+      }
+    }
   }
+
+  findExoticDebug(): void {
+    this.findExotic();
+    let recent = this.recent_exotics[0];
+    let exotic = this.exotics[recent.exotic];
+    if (exotic.knowledge < NUM_KNOBS) {
+      exotic.knowledge++;
+    }
+    this.level_score += recent.value;
+    this.game_score += recent.value;
+    this.probes_left--;
+  }
+
 
   level_score!: number;
   probes_left!: number;
   probe_config!: number[];
   exotics!: ExoticDef[];
   recent_exotics!: RecentRecord[];
+  survey_bonus!: number;
+  survey_done!: boolean;
   initLevel(seed: number): void {
     rand.reseed(seed);
     this.level_score = 0;
     this.probes_left = 24;
+    this.survey_bonus = 5000;
+    this.survey_done = false;
     this.probe_config = [];
 
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
@@ -198,9 +238,9 @@ class GameState {
         name: randomExoticName(),
         knobs: [],
         value: 5 + rand.range(94),
-        total_value: ii < 2 ? 77 : 0,
-        total_found: ii < 2 ? 1 : 0,
-        knowledge: ii === 0 ? KNOBS.length - 2 : ii === 1 ? 1 : 0,
+        total_value: 0,
+        total_found: 0,
+        knowledge: 0,
         knob_order: [],
       };
       for (let jj = 0; jj < NUM_KNOBS; ++jj) {
@@ -283,6 +323,7 @@ let sprite_toggles: Sprite;
 let game_state: GameState;
 let sprite_dither: Sprite;
 let shader_dither: Shader;
+let shader_dither_transition: Shader;
 const dither_uvs = vec4(0, 0, game_width / 4, game_height / 4);
 function init(): void {
   sprite_toggles = spriteCreate({
@@ -296,7 +337,42 @@ function init(): void {
     wrap_t: gl.REPEAT,
   });
   shader_dither = shaderCreate('shaders/dither.fp');
+  shader_dither_transition = shaderCreate('shaders/dither_transition.fp');
   game_state = new GameState();
+}
+
+function fadeDither(
+  fade_time: number,
+  z: number,
+  initial: Texture,
+  ms_since_start: number,
+  force_end: boolean
+): string {
+  let progress = min(ms_since_start / fade_time, 1);
+  let alpha = 1 - progress; //  (1 - easeOut(progress, 2));
+  let color = vec4(1, 1, 1, 1);
+  camera2d.setNormalized();
+  spriteQueueRaw4([initial, sprite_dither.texs[0]],
+    0, 0, 0, 1,
+    1, 1, 1, 0,
+    z,
+    0, 1, 1, 0,
+    color, shader_dither_transition, {
+      uv_scale: dither_uvs,
+      dither_param: [alpha],
+    });
+
+  if (force_end || progress === 1) {
+    return transition.REMOVE;
+  }
+  return transition.CONTINUE;
+}
+
+const TRANSITION_TIME = engine.defines.VIDEOREC ? 1000 : 250;
+function queueTransition(): void {
+  if (getFrameIndex() > 1) {
+    transition.queue(Z.TRANSITION_FINAL, fadeDither.bind(null, TRANSITION_TIME));
+  }
 }
 
 function perc(v: number): string {
@@ -432,7 +508,7 @@ function drawExoticInfoPanel(param: {
 }
 
 
-const CONFIG_TRANSITION_IN_TIME = engine.DEBUG ? 60 : 600;
+const CONFIG_TRANSITION_IN_TIME = 600;
 let transition_time = 0;
 
 function stateDroneConfig(dt: number): void {
@@ -477,7 +553,7 @@ function stateDroneConfig(dt: number): void {
 
   x += 7;
   w -= 7 * 2;
-  let { probe_config, exotics } = game_state;
+  let { probe_config, exotics, recent_exotics } = game_state;
   for (let ii = 0; ii < NUM_KNOBS; ++ii) {
     font.draw({
       style: style_text,
@@ -524,7 +600,6 @@ function stateDroneConfig(dt: number): void {
   y += LINEH;
   for (let ii = 0; ii < exotics.length; ++ii) {
     let exotic = exotics[ii];
-    z = Z.UI;
 
     y = drawExoticInfoPanel({
       x, y,
@@ -537,7 +612,70 @@ function stateDroneConfig(dt: number): void {
     y -= 5;
   }
 
-  // TODO: recent results
+  x = 1;
+  y = 1;
+  w = INFO_PANEL_W;
+  z = Z.UI;
+  if (recent_exotics.length) {
+    font.draw({
+      color: palette_font[3],
+      x, y, z, w,
+      text: 'Recent Finds',
+      align: ALIGN.HCENTER,
+    });
+    y += LINEH;
+    let left_y0 = y;
+    x += 6;
+    w -= 6 * 2;
+    y += 2;
+    for (let ii = 0; ii < min(recent_exotics.length, 8); ++ii) {
+      y += 4;
+      let recent = recent_exotics[ii];
+      let exotic = exotics[recent.exotic];
+
+      // TODO: exotic icons
+      font.draw({
+        style: style_text,
+        x, y, z,
+        text: ` ${exotic.name}`,
+      });
+      font.draw({
+        color: palette_font[1],
+        x: x + CHW * 7,
+        y, z,
+        text: `$${recent.value}`,
+      });
+      y += LINEH;
+      font.draw({
+        color: palette_font[1],
+        x, y, z,
+        text: 'DWARFS:',
+      });
+      for (let jj = 0; jj < NUM_KNOBS; ++jj) {
+        let xxx = x + CHW * 7 + jj * CHW;
+        if (jj > 1) {
+          xxx += 2;
+        }
+        sprite_toggles.draw({
+          x: xxx - 1,
+          y: y - 1,
+          z,
+          w: KNOB_W, h: KNOB_W,
+          frame: recent.knobs[jj] + 3,
+        });
+      }
+      y += LINEH;
+    }
+    y += 4;
+    panel({
+      x: 1,
+      y: left_y0,
+      z: Z.UI - 1,
+      w: INFO_PANEL_W,
+      h: y - left_y0,
+      sprite: autoAtlas('game', 'panel_info'),
+    });
+  }
 
   let button_w = 95;
   y = 164;
@@ -549,23 +687,71 @@ function stateDroneConfig(dt: number): void {
       w: button_w,
       disabled,
       text: game_state.probes_left ? 'LAUNCH!' : 'Next Planet',
+      hotkey: KEYS.SPACE,
     })) {
-      game_state.probes_left--;
-      startMining();
+      if (game_state.probes_left) {
+        game_state.probes_left--;
+        startMining();
+      } else {
+        queueTransition();
+        game_state.initLevel(game_state.level_idx++);
+      }
     }
   }
   y += uiButtonHeight() + 2;
+  if (!disabled) {
+    font.draw({
+      color: palette_font[3],
+      x: 0, y, z,
+      w: game_width,
+      align: ALIGN.HCENTER,
+      text: `${game_state.probes_left} ${plural(game_state.probes_left, 'Probe')} left`,
+    });
+  }
+
+  z = Z.UI;
+  y = game_height - LINEH * 2 - 1;
   font.draw({
     color: palette_font[3],
-    x: 0, y, z,
-    w: game_width,
-    align: ALIGN.HCENTER,
-    text: `${game_state.probes_left} ${plural(game_state.probes_left, 'Probe')} left`,
+    x: 1, y, z,
+    text: `$${game_state.level_score} Planet Score`,
+  });
+  y += LINEH;
+  font.draw({
+    color: palette_font[3],
+    x: 1, y, z,
+    text: `$${game_state.game_score}/$${GOAL_SCORE} Campaign`,
   });
 
-  // TODO: game_score
-  // TODO: level_score
-  // TODO: survey bonus
+  y = game_height - LINEH - 1;
+  let all_surveyed = true;
+  for (let ii = 0; ii < exotics.length; ++ii) {
+    if (exotics[ii].knowledge !== NUM_KNOBS) {
+      all_surveyed = false;
+    }
+  }
+  if (all_surveyed && !game_state.survey_done) {
+    button_w = 106;
+    if (button({
+      x: game_width - 1 - button_w - 4,
+      y: game_height - 1 - uiButtonHeight(),
+      z,
+      w: button_w,
+      text: `Claim $${game_state.survey_bonus}`,
+    })) {
+      game_state.survey_done = true;
+      game_state.level_score += game_state.survey_bonus;
+      game_state.game_score += game_state.survey_bonus;
+    }
+  } else {
+    font.draw({
+      color: palette_font[3],
+      x: 1, y, z,
+      w: game_width - 1,
+      align: ALIGN.HRIGHT,
+      text: game_state.survey_done ? 'Survey Bonus Claimed' : `Survey Bonus: $${game_state.survey_bonus}`,
+    });
+  }
 }
 
 let mining_state: {
@@ -692,9 +878,14 @@ function doMiningResult(dt: number): boolean {
       z,
       w: button_w,
       text: 'STUDY',
+      auto_focus: true,
     })) {
       mining_result_state.stage = 'study_anim';
-      mining_result_state.t = 0;
+      if (!mining_result_state.knowledge_start) {
+        mining_result_state.t = STUDY_ANIM_TIME * 0.1;
+      } else {
+        mining_result_state.t = 0;
+      }
     }
     y += uiButtonHeight() + 2;
     y += font.draw({
@@ -832,13 +1023,13 @@ function stateMine(dt: number): void {
     }
   } else {
     if (do_accel) {
-      mining_state.accel += dt * 0.01;
+      mining_state.accel += dt * ACCEL_SPEED;
     } else {
-      mining_state.accel -= dt * 0.01;
+      mining_state.accel -= dt * ACCEL_SPEED;
     }
     mining_state.accel = clamp(mining_state.accel, -1, 1);
 
-    mining_state.speed += mining_state.accel * dt * 0.0005;
+    mining_state.speed += mining_state.accel * dt * ACCEL_MAX;
     mining_state.speed = clamp(mining_state.speed, 0, 1);
     if (!mining_state.speed) {
       mining_state.accel = 0;
@@ -846,8 +1037,8 @@ function stateMine(dt: number): void {
       mining_state.accel = 0;
     }
 
-    let dprogress = mining_state.speed * dt * 0.0001;
-    if (engine.DEBUG && keyDown(KEYS.W) || true) {
+    let dprogress = mining_state.speed * dt * PROGRESS_SPEED;
+    if (engine.DEBUG && keyDown(KEYS.W)) {
       dprogress += dt * 0.01;
     }
     mining_state.progress += dprogress;
@@ -860,19 +1051,20 @@ function stateMine(dt: number): void {
     } else {
       if (mining_state.progress >= mining_state.danger_target_time) {
         mining_state.danger_target_time += rand.floatBetween(0.05, 0.15);
-        mining_state.danger_target = rand.floatBetween(0, 0.9);
+        mining_state.danger_target = rand.floatBetween(0, 0.8);
       }
       let time_to_target = mining_state.danger_target_time - mining_state.progress;
       if (time_to_target > 0) {
         let danger_to_target = mining_state.danger_target - mining_state.danger;
-        mining_state.danger += min(dprogress / time_to_target, 1) * danger_to_target;
+        mining_state.danger += min(max(dt * PROGRESS_SPEED * MIN_PROGRESS, dprogress) / time_to_target, 1) *
+          danger_to_target;
       }
     }
 
     let over_danger = max(0, mining_state.speed - (1 - mining_state.danger));
     if (over_danger && !mining_state.done) {
       over_danger = 0.1 + over_danger;
-      mining_state.stress += over_danger * 0.001 * dt;
+      mining_state.stress += over_danger * DAMAGE_RATE * dt;
       mining_state.stress = clamp(mining_state.stress, 0, 1);
       over_danger_time += dt;
       do_flicker = true;
@@ -1057,7 +1249,7 @@ export function main(): void {
   init();
 
   engine.setState(stateDroneConfig);
-  if (engine.DEBUG) {
+  if (engine.DEBUG && false) {
     startMining();
   }
 }
