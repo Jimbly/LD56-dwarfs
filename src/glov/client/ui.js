@@ -2128,7 +2128,7 @@ function uiApplyStyle(style) {
 }
 
 export function setButtonHeight(button_height) {
-  panel_pixel_scale = button_height / sprites.panel.uidata.total_h; // button_height / panel pixel resolution
+  panel_pixel_scale = 1; // LD56 button_height / sprites.panel.uidata.total_h; // button_height / panel pixel resolution
   scrollAreaSetPixelScale(button_height / sprites.button.uidata.total_h);
   uiStyleModify(uiStyleDefault(), {
     button_height,
