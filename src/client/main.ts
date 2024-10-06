@@ -101,8 +101,8 @@ const ACCEL_MAX = 0.0005;
 const ACCEL_MIN = -1.5; // relative to ACCEL_MAX
 const ACCEL_SPEED = 0.01;
 const DECEL_SPEED = 0.01;
-const DAMAGE_RATE = 0.002;
-const AMBIENT_DAMAGE_RATE = 0.000015;
+const DAMAGE_RATE = 0.002 * 0.5; // JK TEST
+const AMBIENT_DAMAGE_RATE = 0.000015 * 0.5; // JK TEST
 
 
 let rand = randCreate(1234);
@@ -551,7 +551,10 @@ function drawExoticInfoPanel(param: {
 let bg_time = 0;
 let bg_dither_uvs = vec4();
 let bg_xoffs = 0;
+let circuvs = vec4();
 function drawBG(dt: number, h: number): void {
+  let bounce = Math.sin(getFrameTimestamp() * 0.005) * 4;
+
   let xoffs = h ? -90 : 0;
   if (h) {
     bg_xoffs = lerp(dt/1000, bg_xoffs, xoffs);
@@ -568,13 +571,31 @@ function drawBG(dt: number, h: number): void {
   v4copy(bg_dither_uvs, dither_uvs);
   bg_dither_uvs[1] += hoffs/4;
   bg_dither_uvs[3] += hoffs/4;
+  circuvs[0] = -((game_width - game_height) / game_height/2);
+  circuvs[2] = 1 + -circuvs[0];
+  circuvs[1] = 0;
+  circuvs[3] = 1;
+  let circ_u_offs = -(bg_xoffs + 7) / game_height;
+  circuvs[0] += circ_u_offs;
+  circuvs[2] += circ_u_offs;
+  let circ_v_offs = -bounce / game_height;
+  circuvs[1] += circ_v_offs;
+  circuvs[3] += circ_v_offs;
+  let circ_scale_u = (circuvs[2] - circuvs[0]) / (bg_dither_uvs[2] - bg_dither_uvs[0]);
+  let circ_scale_v = (circuvs[3] - circuvs[1]) / (bg_dither_uvs[3] - bg_dither_uvs[1]);
   sprite_dither.draw({
     x: 0, y: 0, z: 1,
     w: game_width, h: game_height,
     shader: shader_gas_giant,
     shader_params: {
-      params: [1, 1, 1, bg_time * time_scale],
+      params: [1, 1, h, bg_time * time_scale],
       uvscale: [game_width/(2*zoom)/dither_uvs[2], uv_scale_y, 0.1, 0],
+      uvscale2: [
+        circ_scale_u,
+        circ_scale_v,
+        circuvs[0] - (bg_dither_uvs[0] * circ_scale_u),
+        circuvs[1] - (bg_dither_uvs[1] * circ_scale_v),
+      ],
       c0: palette[0],
       c1: palette[1],
       c2: palette[2],
@@ -585,7 +606,7 @@ function drawBG(dt: number, h: number): void {
   });
 
   let blimp_y_base = 100 - hoffs_float*3;
-  let blimp_y = blimp_y_base + Math.sin(getFrameTimestamp() * 0.005) * 4;
+  let blimp_y = blimp_y_base + bounce;
   autoAtlas('game', 'blimp').draw({
     x: 157 + bg_xoffs,
     y: blimp_y,
@@ -1383,7 +1404,7 @@ export function main(): void {
   init();
 
   engine.setState(stateDroneConfig);
-  if (engine.DEBUG && false) {
+  if (engine.DEBUG && true) {
     startMining();
   }
 }

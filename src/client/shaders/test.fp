@@ -8,6 +8,7 @@ varying lowp vec4 interp_color;
 varying highp vec2 interp_texcoord;
 uniform vec4 params;
 uniform vec4 uvscale;
+uniform vec4 uvscale2;
 uniform vec4 c0;
 uniform vec4 c1;
 uniform vec4 c2;
@@ -105,5 +106,21 @@ vec3 doMagic(vec2 p)
 
 void main()
 {
-  gl_FragColor = vec4( doMagic( interp_texcoord * uvscale.xy + uvscale.zw ), 1.0 );
+  vec3 col = doMagic( interp_texcoord * uvscale.xy + uvscale.zw );
+
+  vec2 circ_uvs = interp_texcoord * uvscale2.xy + uvscale2.zw;
+  float dist = length(abs(circ_uvs - 0.5)) * 2.0;
+  float h = sqrt(params.z);
+  dist = dist - 2.0 + h * 1.8;
+  dist = min(ceil(dist * 12.0 * (0.25 + h* 0.5)) * 0.333, 1.0);
+  // col.xyz = vec3(dist);
+  if (dist > 0.75) {
+    col = c0.rgb;
+  } else if (dist > 0.5) {
+    col = min(col, c1.rgb);
+  } else if (dist > 0.25) {
+    col = min(col, c2.rgb);
+  }
+
+  gl_FragColor = vec4( col, 1.0 );
 }

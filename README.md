@@ -14,11 +14,28 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
-Evaluate victory condition
-  Or, fixed number of planets?
-    Then level seeding determines $Values, and all other parameters are pure random
-      Possibly seeded random for values of each find
-  And, probably: title page, high scores
+Audio
+  Sound when taking damage
+  button/mouseover
+  sound as studying happens/completes
+  same for selling
+  jingle for research bonus complete
+  Configure menu sound track (maybe while not in mining end screen)
+  Mining ambient sound track
+    Ambient music, fades to 0 at end of progress?
+    Noises for when damage changes velocity
+    Noises for when speed is high
+Victory condition
+  Fixed number of planets?
+    Level seeding determines $Values, and all other parameters are pure random
+      Possibly seeded random for values of each find for consistency too
+  After completing 3? planets, show high scores, give option to continue
+  High scores have 2 tables shown at once - 3-planet campaign score and Endless
+  Add title page & high scores
+Visuals
+  Eyes / snakes
+Balance
+  Maybe give 2 knowledge for dismantling?
 Polish
   Tooltips on DWARFS especially
   Change Armor/Speed/etc labels to be vertical on the side?
