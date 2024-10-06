@@ -45,6 +45,7 @@ import {
   drawRect,
   drawVBox,
   panel,
+  playUISound,
   scaleSizes,
   setButtonHeight,
   setFontHeight,
@@ -712,6 +713,7 @@ function stateDroneConfig(dt: number): void {
         h: KNOB_W,
         no_bg: true,
         text: ' ',
+        sound_button: `button_click${jj+1}`,
         disabled: probe_config[ii] === jj || disabled,
       });
       if (ret) {
@@ -834,6 +836,7 @@ function stateDroneConfig(dt: number): void {
       w: button_w,
       disabled,
       text: game_state.probes_left ? 'LAUNCH!' : 'Next Planet',
+      sound_button: 'launch',
       hotkey: KEYS.SPACE,
     })) {
       if (game_state.probes_left) {
@@ -883,6 +886,7 @@ function stateDroneConfig(dt: number): void {
       z,
       w: button_w,
       text: `Claim $${game_state.survey_bonus}`,
+      sound_button: 'sell',
     })) {
       game_state.survey_done = true;
       game_state.level_score += game_state.survey_bonus;
@@ -1025,6 +1029,7 @@ function doMiningResult(dt: number): boolean {
       text: 'STUDY',
       auto_focus: true,
       hotkey: KEYS.SPACE,
+      sound_button: 'study',
     })) {
       mining_result_state.stage = 'study_anim';
       if (!mining_result_state.knowledge_start) {
@@ -1063,6 +1068,7 @@ function doMiningResult(dt: number): boolean {
       z,
       w: button_w,
       text: 'DISMANTLE',
+      sound_button: 'dismantle',
     })) {
       mining_result_state.stage = 'dismantle_anim';
       mining_result_state.knowledge_start = exotic.knowledge;
@@ -1084,6 +1090,7 @@ function doMiningResult(dt: number): boolean {
       z,
       w: button_w,
       text: 'SHIP',
+      sound_button: 'sell',
     })) {
       mining_result_state.stage = 'sell_anim';
       mining_result_state.t = 0;
@@ -1150,6 +1157,14 @@ function drawMiningConclusion(v: number): void {
     text: mining_state.stress >= 1 ? 'DWARF LOST' : 'EXTRACTION\nSUCCESS',
   });
 }
+let last_damage_time = 0;
+function takeDamage(): void {
+  let now = getFrameTimestamp();
+  if (now - last_damage_time > 333) {
+    playUISound(`damage${1+rand.range(4)}`);
+    last_damage_time = now;
+  }
+}
 let over_danger_time = 0;
 function stateMine(dt: number): void {
   dt = min(dt, 200);
@@ -1194,6 +1209,7 @@ function stateMine(dt: number): void {
 
     if (mining_state.progress === maxp) {
       mining_state.done = true;
+      playUISound('success');
       game_state.findExotic();
       transition_time = 0;
     } else {
@@ -1213,6 +1229,7 @@ function stateMine(dt: number): void {
     if (over_danger && !mining_state.done) {
       over_danger = 0.1 + over_danger;
       mining_state.stress += over_danger * DAMAGE_RATE * dt;
+      takeDamage();
       mining_state.stress = clamp(mining_state.stress, 0, 1);
       over_danger_time += dt;
       do_flicker = true;
@@ -1224,11 +1241,13 @@ function stateMine(dt: number): void {
       over_danger_time = 0;
     }
     if (engine.DEBUG && keyDown(KEYS.L)) {
+      takeDamage();
       mining_state.stress += dt * 0.01;
     }
     if (mining_state.stress >= 1) {
       mining_state.done = true;
       transition_time = 0;
+      playUISound('failure');
     }
   }
 
@@ -1386,6 +1405,23 @@ export function main(): void {
     antialias: false,
     ui_sprites,
     pixel_perfect,
+    ui_sounds: {
+      rollover: { file: 'rollover', volume: 0.1 },
+      button_click: { file: 'button_click' },
+      button_click1: { file: 'button_click1' },
+      button_click2: { file: 'button_click' },
+      button_click3: { file: 'button_click2' },
+      launch: { file: 'launch' },
+      damage1: { file: 'damage1' },
+      damage2: { file: 'damage2' },
+      damage3: { file: 'damage3' },
+      damage4: { file: 'damage4' },
+      study: { file: 'study' },
+      dismantle: { file: 'dismantle' },
+      sell: { file: 'sell' },
+      success: { file: 'success' },
+      failure: { file: 'failure' },
+    },
   })) {
     return;
   }

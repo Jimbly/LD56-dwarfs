@@ -1,7 +1,7 @@
-LD56 - TBD
+LD56 - Tiny Creatures
 ============================
 
-Ludum Dare 56 Entry by Jimbly - "Insert Title Here"
+Ludum Dare 56 Entry by Jimbly - "DWARFS"
 
 * Play here: [dashingstrike.com/LudumDare/LD56/](http://www.dashingstrike.com/LudumDare/LD56/)
 * Using [Javascript libGlov/GLOV.js framework](https://github.com/Jimbly/glovjs)
@@ -14,12 +14,8 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
+Change DWARFS to be a special color at the start of each word
 Audio
-  Sound when taking damage
-  button/mouseover
-  sound as studying happens/completes
-  same for selling
-  jingle for research bonus complete
   Configure menu sound track (maybe while not in mining end screen)
   Mining ambient sound track
     Ambient music, fades to 0 at end of progress?
@@ -36,7 +32,9 @@ Visuals
   Eyes / snakes
 Balance
   Maybe give 2 knowledge for dismantling?
+  Mayve Safety should never be quite as low - or, at least, make sure it increases quickly
 Polish
+  Connect Speed / Safety bars to make it clear it's a threshold
   Tooltips on DWARFS especially
   Change Armor/Speed/etc labels to be vertical on the side?
   Border color?
@@ -45,6 +43,7 @@ Polish
 FTUE
   No configuration on first probe
   If they fail, "let's try that again", and refund the probe
+    Maybe refund failed probes until they've succeeded twice
   Explain DWARFS after first successful probe
 
 Gas Giant Game Plan
