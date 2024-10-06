@@ -16,10 +16,6 @@ Start with: `npm start` (after running `npm i` once)
 
 Visuals
   Eyes / snakes
-Balance
-  Maybe give 2 knowledge for dismantling?
-Polish
-  Border color?
 
 Gas Giant Game Plan
   Stats:

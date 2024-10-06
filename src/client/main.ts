@@ -25,10 +25,12 @@ import {
 } from 'glov/client/font';
 import {
   KEYS,
+  PAD,
   eatAllInput,
   keyDown,
   keyUpEdge,
   mouseDownAnywhere,
+  padButtonDown,
 } from 'glov/client/input';
 import { markdownAuto } from 'glov/client/markdown';
 import { markdownSetColorStyle } from 'glov/client/markdown_renderables';
@@ -121,7 +123,7 @@ const BUTTON_H = 15;
 const INFO_PANEL_W = 118;
 const INFO_PANEL_H = 51;
 
-const CAMPAIGN_PLANETS = 3;
+const CAMPAIGN_PLANETS = 2;
 
 // Mining minigame balance
 const MIN_PROGRESS = 0.01; // if speed=0, still advance by this much
@@ -130,8 +132,8 @@ const ACCEL_MAX = 0.0005;
 const ACCEL_MIN = -1.5; // relative to ACCEL_MAX
 const ACCEL_SPEED = 0.01;
 const DECEL_SPEED = 0.01;
-const DAMAGE_RATE = 0.002 * 0.5; // JK TEST
-const AMBIENT_DAMAGE_RATE = 0.000015 * 0.5; // JK TEST
+const DAMAGE_RATE = 0.002 * 0.75; // JK TEST
+const AMBIENT_DAMAGE_RATE = 0.000015;
 
 
 let rand = randCreate(Date.now());
@@ -242,8 +244,8 @@ class GameState {
   endless_enabled = false;
   constructor() {
     this.initLevel(this.level_idx);
-    if (engine.DEBUG && true) {
-      for (let ii = 0; ii < 3; ++ii) {
+    if (engine.DEBUG && false) {
+      for (let ii = 0; ii < 20; ++ii) {
         this.findExoticDebug();
       }
     }
@@ -288,7 +290,7 @@ class GameState {
   initLevel(seed: number): void {
     rand_levelgen.reseed(seed);
     this.level_score = 0;
-    this.probes_left = 24;
+    this.probes_left = 18;
     this.survey_bonus = 1500;
     this.survey_done = false;
     this.probe_config = [];
@@ -698,6 +700,9 @@ let circuvs = vec4();
 function drawBG(dt: number, h: number): void {
   let bounce = Math.sin(getFrameTimestamp() * 0.005) * 4;
 
+  v4copy(engine.border_clear_color, palette[0]);
+  v4copy(engine.border_color, palette[0]);
+
   let xoffs = h ? -90 : 0;
   if (h) {
     bg_xoffs = lerp(dt/1000, bg_xoffs, xoffs);
@@ -915,7 +920,7 @@ function stateDroneConfig(dt: number): void {
 NOTE: Interplanetary Expeditions Ltd assures us the probes contain no actual dwarfs.`, 'Uh, huh...');
     disabled = true;
   } else if (tut_state === 1) {
-    tutPanel(1, 22, 220, `YOU have arrived at a GAS GIANT (the first of 3 in your Campaign).
+    tutPanel(1, 22, 220, `YOU have arrived at a GAS GIANT (the first of 2 in your Campaign).
 
 LAUNCH your first DWARF PROBE to discover an EXOTIC.`);
   } else if (tut_state === 2) {
@@ -1295,6 +1300,7 @@ function doMiningResult(dt: number): boolean {
     }
   }
   if (mining_result_state.stage === 'choice' && exotic.knowledge === NUM_KNOBS) {
+    playUISound('sell');
     mining_result_state.stage = 'sell_anim';
     mining_result_state.t = 0;
   }
@@ -1492,11 +1498,12 @@ function stateMine(dt: number): void {
 
   drawBG(dt, mining_state.progress);
 
-  let do_accel = keyDown(KEYS.SPACE) || mouseDownAnywhere();
+  let do_accel = keyDown(KEYS.SPACE) || keyDown(KEYS.A) || mouseDownAnywhere() || padButtonDown(PAD.A) ||
+     padButtonDown(PAD.B) || padButtonDown(PAD.X);
 
   if (tut_state === 2) {
     if (mining_state.progress < 0.75) {
-      tutPanel(1, 116 - 10, 160, `CLICK/TAP ANYWHERE or hold SPACE to ACCELERATE.
+      tutPanel(1, 116 - 10, 160, `CLICK/TAP ANYWHERE or hold SPACE or A to ACCELERATE.
 
 But watch out!  If your SPEED is beyond the current SAFETY range, your will lose` +
 ' ARMOR and potentially lose your DWARF.');
