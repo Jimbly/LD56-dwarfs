@@ -273,6 +273,11 @@ export function scoresDraw<ScoreType>({
   let my_name = scoreGetPlayerName();
   let found_me = false;
   let scores_list = scores.list;
+  // scores_list = scores_list.concat(scores_list);
+  // scores_list = scores_list.concat(scores_list);
+  // scores_list = scores_list.concat(scores_list);
+  // scores_list = scores_list.concat(scores_list);
+  // scores_list = scores_list.concat(scores_list);
   let next_rank = 1;
   for (let ii = 0; ii < scores_list.length; ++ii) {
     let s = scores_list[ii % scores_list.length];
@@ -359,7 +364,7 @@ export function scoresDraw<ScoreType>({
     }
 
     let show_rename = my_name.startsWith('Anonymous') || !my_name || force_show_rename;
-    let button_size = show_rename && rename_button_size || 10;
+    let button_size = show_rename && rename_button_size || 16;
     let button_param: ButtonTextParam = {
       x,
       y: y - size * 0.25,

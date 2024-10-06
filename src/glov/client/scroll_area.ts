@@ -316,6 +316,7 @@ class ScrollAreaInternal implements ScrollArea {
     handle_pixel_h = max(handle_pixel_h, min(handle_pixel_min_h, trough_height * 0.75));
     let handle_screenpos = this.y + button_h_nopad + handle_pos * (this.h - button_h_nopad * 2 - handle_pixel_h);
     // TODO: round handle_screenpos in pixely modes?
+    handle_screenpos = round(handle_screenpos);
     let top_color = this.color;
     let bottom_color = this.color;
     let handle_color = this.color;

@@ -8,6 +8,7 @@ import { AnimationSequencer, animationSequencerCreate } from 'glov/client/animat
 import { autoResetSkippedFrames } from 'glov/client/auto_reset';
 import { autoAtlas } from 'glov/client/autoatlas';
 import * as camera2d from 'glov/client/camera2d';
+import { editBoxAnyActive } from 'glov/client/edit_box';
 import * as engine from 'glov/client/engine';
 import {
   getFrameIndex,
@@ -33,6 +34,11 @@ import {
 import { markdownAuto } from 'glov/client/markdown';
 import { markdownSetColorStyle } from 'glov/client/markdown_renderables';
 import { netInit } from 'glov/client/net';
+import {
+  ScoreSystem,
+  scoreAlloc,
+} from 'glov/client/score';
+import { scoresDraw } from 'glov/client/score_ui';
 import * as settings from 'glov/client/settings';
 import { shaderCreate } from 'glov/client/shaders';
 import {
@@ -159,6 +165,12 @@ type RecentRecord = {
   value: number;
 };
 
+type Score = {
+  money: number;
+  planets: number;
+};
+let score_system: ScoreSystem<Score>;
+
 function randomExoticName(): string {
   let num_numbers = 1 + rand.range(2);
   let str = [];
@@ -221,6 +233,7 @@ class GameState {
 
   level_idx = 1;
   game_score = 0;
+  endless_enabled = false;
   constructor() {
     this.initLevel(this.level_idx);
     if (engine.DEBUG && false) {
@@ -230,6 +243,23 @@ class GameState {
     }
   }
 
+  addScoreFinalize(): void {
+    let score: Score = {
+      planets: this.level_idx,
+      money: this.game_score,
+    };
+    score_system.setScore(1, score);
+    if (this.level_idx <= CAMPAIGN_PLANETS) {
+      score_system.setScore(0, score);
+    }
+  }
+
+  addScore(score: number): void {
+    this.level_score += score;
+    this.game_score += score;
+    this.addScoreFinalize();
+  }
+
   findExoticDebug(): void {
     this.findExotic();
     let recent = this.recent_exotics[0];
@@ -237,8 +267,7 @@ class GameState {
     if (exotic.knowledge < NUM_KNOBS) {
       exotic.knowledge++;
     }
-    this.level_score += recent.value;
-    this.game_score += recent.value;
+    this.addScore(recent.value);
     this.probes_left--;
   }
 
@@ -389,6 +418,29 @@ function init(): void {
   shader_dither = shaderCreate('shaders/dither.fp');
   shader_dither_transition = shaderCreate('shaders/dither_transition.fp');
   shader_gas_giant = shaderCreate('shaders/test.fp');
+
+  const ENCODE_PLANETS = 10000;
+  score_system = scoreAlloc({
+    score_to_value: (score: Score): number => {
+      return ENCODE_PLANETS - 1 - score.planets +
+        score.money * ENCODE_PLANETS;
+    },
+    value_to_score: (value: number): Score => {
+      let p = value % ENCODE_PLANETS;
+      value -= p;
+      return {
+        planets: ENCODE_PLANETS - 1 - p,
+        money: floor(value / ENCODE_PLANETS),
+      };
+    },
+    level_defs: 2,
+    score_key: 'LD56',
+    ls_key: 'ld56',
+    asc: false,
+    rel: 8,
+    num_names: 3,
+    histogram: false,
+  });
 }
 
 function startNewGame(): void {
@@ -718,7 +770,7 @@ let loading_music: TSMap<true> = {};
 let loaded_music: TSMap<true> = {};
 let want_music = !engine.DEBUG;
 function tickMusic(music_name: string | null): void {
-  if (keyUpEdge(KEYS.M)) {
+  if (keyUpEdge(KEYS.M) && !editBoxAnyActive()) {
     want_music = !want_music;
   }
   if (!settings.volume || isInBackground() || !want_music) {
@@ -780,7 +832,7 @@ function stateDroneConfig(dt: number): void {
   let z = Z.UI;
   let w = CONFIGURE_PANEL_W;
 
-  let { probes_left, probe_config, exotics, recent_exotics } = game_state;
+  let { probes_left, probe_config, exotics, recent_exotics, endless_enabled } = game_state;
 
   if (probes_left) {
     panel({
@@ -943,7 +995,7 @@ function stateDroneConfig(dt: number): void {
       y, z,
       w: button_w,
       disabled,
-      text: probes_left ? 'LAUNCH!' : planets_left ? 'Next Planet' : 'FINISH',
+      text: probes_left ? 'LAUNCH!' : planets_left || endless_enabled ? 'Next Planet' : 'FINISH',
       sound_button: 'launch',
       hotkey: KEYS.SPACE,
     })) {
@@ -952,10 +1004,10 @@ function stateDroneConfig(dt: number): void {
         startMining();
       } else {
         queueTransition();
-        if (planets_left) {
+        if (planets_left || endless_enabled) {
           game_state.initLevel(++game_state.level_idx);
         } else {
-          // To high scores
+          engine.setState(stateScores);
         }
       }
     }
@@ -970,7 +1022,7 @@ function stateDroneConfig(dt: number): void {
         align: ALIGN.HCENTER,
         text: `${probes_left} ${plural(probes_left, 'Probe')} left`,
       });
-    } else {
+    } else if (!endless_enabled) {
       drawNonPanel({
         color: palette_font[3],
         x: 0, y, z,
@@ -992,7 +1044,7 @@ function stateDroneConfig(dt: number): void {
   drawNonPanel({
     color: palette_font[3],
     x: 1, y, z,
-    text: `$${game_state.game_score} Campaign Score`,
+    text: `$${game_state.game_score} ${endless_enabled ? 'Endless' : 'Campaign'} Score`,
   });
 
   y = game_height - LINEH - 1;
@@ -1011,8 +1063,7 @@ function stateDroneConfig(dt: number): void {
       sound_button: 'sell',
     })) {
       game_state.survey_done = true;
-      game_state.level_score += game_state.survey_bonus;
-      game_state.game_score += game_state.survey_bonus;
+      game_state.addScore(game_state.survey_bonus);
     }
   } else {
     drawNonPanel({
@@ -1099,6 +1150,7 @@ function doMiningResult(dt: number): boolean {
     game_state.level_score += left;
     game_state.game_score += left;
     if (mining_result_state.t >= SELL_ANIM_TIME) {
+      game_state.addScoreFinalize();
       mining_result_state.done = true;
     }
   }
@@ -1669,7 +1721,8 @@ function stateTitle(dt: number): void {
       y: y2,
       text: 'HIGH SCORES',
     })) {
-      // TODO
+      queueTransition();
+      engine.setState(stateScores);
     }
 
     if (game_state) {
@@ -1692,6 +1745,124 @@ function stateTitle(dt: number): void {
   //   x: 0, y: game_height - CHH - 8, w: W, align: ALIGN.HCENTER,
   //   text: 'Copywrite 1977 QuantumPulse Ltd, Novi Grad, Sokovia',
   // });
+}
+
+const SCORE_COLUMNS = [
+  // widths are just proportional, scaled relative to `width` passed in
+  { name: '', width: CHW * 3, align: ALIGN.HFIT | ALIGN.HRIGHT | ALIGN.VCENTER },
+  { name: 'Name', width: CHW * 8, align: ALIGN.HFIT | ALIGN.VCENTER },
+  { name: 'Score', width: CHW * 6 },
+  { name: 'P', width: CHW * 3 },
+];
+const style_score = fontStyleColored(null, palette_font[2]);
+const style_me = fontStyleColored(null, palette_font[1]);
+const style_header = fontStyleColored(null, palette_font[2]);
+function myScoreToRow(row: unknown[], score: Score): void {
+  row.push(score.money, score.planets);
+}
+
+function stateScores(dt: number): void {
+  tickMusic('music_main');
+  gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
+
+  let x = 1;
+  let y = 3;
+
+  if (buttonText({
+    x: 1,
+    y: 1,
+    w: CHW * 6,
+    text: 'BACK',
+    hotkey: KEYS.ESC,
+  })) {
+    queueTransition();
+    engine.setState(stateTitle);
+  }
+
+  font.draw({
+    style: style_title,
+    x: 0,
+    y,
+    w: game_width,
+    text: 'HIGH SCORES',
+    size: CHH * 2,
+    align: ALIGN.HCENTER,
+  });
+  y += CHH * 2 + 3;
+
+  let w = game_width / 2 - 2;
+  font.draw({
+    color: palette_font[0],
+    x, y, w,
+    text: 'Campaign',
+    align: ALIGN.HCENTER,
+  });
+  y += LINEH;
+  let text_height = uiTextHeight();
+  scoresDraw<Score>({
+    score_system,
+    allow_rename: true,
+    x,
+    width: w,
+    y,
+    height: game_height - y,
+    z: Z.UI,
+    size: text_height,
+    line_height: text_height + 2,
+    level_index: 0,
+    columns: SCORE_COLUMNS,
+    scoreToRow: myScoreToRow,
+    style_score,
+    style_me,
+    style_header,
+    color_line: palette[3],
+    color_me_background: palette[0],
+    rename_button_size: 12,
+  });
+
+  x = game_width/2 + 1;
+  y -= LINEH;
+  font.draw({
+    color: palette_font[0],
+    x, y, w,
+    text: 'Endless',
+    align: ALIGN.HCENTER,
+  });
+  y += LINEH;
+  scoresDraw<Score>({
+    score_system,
+    allow_rename: false,
+    x,
+    width: w,
+    y,
+    height: game_height - y,
+    z: Z.UI,
+    size: text_height,
+    line_height: text_height + 2,
+    level_index: 1,
+    columns: SCORE_COLUMNS,
+    scoreToRow: myScoreToRow,
+    style_score,
+    style_me,
+    style_header,
+    color_line: palette[3],
+    color_me_background: palette[0],
+    rename_button_size: 7,
+  });
+
+  if (game_state) {
+    let button_w = CHW * 22;
+    if (buttonText({
+      x: game_width - button_w - 1,
+      w: button_w,
+      y: game_height - BUTTON_H - 8,
+      text: 'Play ENDLESS MODE...',
+    })) {
+      game_state.endless_enabled = true;
+      queueTransition();
+      engine.setState(stateDroneConfig);
+    }
+  }
 }
 
 export function main(): void {
@@ -1761,5 +1932,7 @@ export function main(): void {
   if (engine.DEBUG && false) {
     startNewGame();
     startMining();
+  } else if (engine.DEBUG && !true) {
+    engine.setState(stateScores);
   }
 }
