@@ -247,8 +247,8 @@ class GameState {
   endless_enabled = false;
   constructor() {
     this.initLevel(this.level_idx);
-    if (engine.DEBUG && false) {
-      for (let ii = 0; ii < 20; ++ii) {
+    if (engine.DEBUG && true) {
+      for (let ii = 0; ii < 18; ++ii) {
         this.findExoticDebug();
       }
     }
@@ -769,7 +769,7 @@ function drawBG(dt: number, h: number): void {
     h: 37,
   });
 
-  if (!game_state.probes_left) {
+  if (!game_state.probes_left && !h) {
     return;
   }
   let probe_y = blimp_y + 33 + hoffs_float*3;
