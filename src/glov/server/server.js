@@ -139,7 +139,7 @@ export function startup(params) {
   assert(server);
   assert(!exchange, 'Exchange must now be registered by type and specified in default config');
 
-  serverFontInit(font || 'palanquin32');
+  serverFontInit(font || 'ibm8x8x1');
 
   if (!data_stores) {
     data_stores = {};
