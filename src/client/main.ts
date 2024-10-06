@@ -58,6 +58,7 @@ import {
 import * as transition from 'glov/client/transition';
 import {
   button,
+  buttonImage,
   buttonSetDefaultYOffs,
   buttonText,
   buttonWasFocused,
@@ -1726,17 +1727,45 @@ function stateTitle(dt: number): void {
     }
 
     if (game_state) {
-      y2 += BUTTON_H + 4;
       if (button({
         ...button_param,
         x: floor(button_x0 + (button_w + PROMPT_PAD)/2),
-        y: y2,
+        y: y2 + BUTTON_H + 4,
         text: 'RESUME GAME',
       })) {
         queueTransition();
         engine.setState(stateDroneConfig);
       }
     }
+
+    const toggle_button_w = 27;
+    if (buttonImage({
+      ...button_param,
+      w: toggle_button_w,
+      x: game_width - toggle_button_w - 2,
+      y: y2,
+      shrink: 1,
+      frame: 0,
+      sound_button: null,
+      img: autoAtlas('game', settings.volume_sound ? 'sfx_on' : 'sfx_off'),
+    })) {
+      settings.settingsSet('volume_sound', settings.volume_sound ? 0 : 1);
+      if (settings.volume_sound) {
+        playUISound('button_click');
+      }
+    }
+    if (buttonImage({
+      ...button_param,
+      w: toggle_button_w,
+      x: game_width - toggle_button_w - 2,
+      y: y2 + BUTTON_H + 4,
+      shrink: 1,
+      frame: 0,
+      img: autoAtlas('game', want_music ? 'mus_on' : 'mus_off'),
+    })) {
+      want_music = !want_music;
+    }
+
   }
 
   // font.draw({
