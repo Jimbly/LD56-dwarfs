@@ -5,7 +5,6 @@ const local_storage = require('glov/client/local_storage');
 local_storage.setStoragePrefix('LD56'); // Before requiring anything else that might load from this
 
 import { AnimationSequencer, animationSequencerCreate } from 'glov/client/animation';
-import { autoResetSkippedFrames } from 'glov/client/auto_reset';
 import { autoAtlas } from 'glov/client/autoatlas';
 import * as camera2d from 'glov/client/camera2d';
 import { editBoxAnyActive } from 'glov/client/edit_box';
@@ -47,6 +46,10 @@ import {
   soundPlay,
   soundResumed,
 } from 'glov/client/sound';
+import {
+  SPOT_DEFAULT_LABEL,
+  spot,
+} from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import {
   Shader,
@@ -239,8 +242,8 @@ class GameState {
   endless_enabled = false;
   constructor() {
     this.initLevel(this.level_idx);
-    if (engine.DEBUG && false) {
-      for (let ii = 0; ii < 23; ++ii) {
+    if (engine.DEBUG && true) {
+      for (let ii = 0; ii < 3; ++ii) {
         this.findExoticDebug();
       }
     }
@@ -573,6 +576,15 @@ function drawExoticInfoPanel(param: {
       text: ` ${exotic.name}`,
     });
     if (show_match) {
+      spot({
+        x: xx + CHW * 7,
+        y: yy,
+        w,
+        h: CHH,
+        def: SPOT_DEFAULT_LABEL,
+        // eslint-disable-next-line max-len
+        tooltip: 'This % indicates how well your current [c=dwarfs]DWARFS[/c] match the specified Exotic, based on what you currently know about it.\n\nHigher matches will also yield more valuable resources.',
+      });
       let match_info = matchInfo(exotic, game_state.probe_config, false);
       font.draw({
         style: style_text,
@@ -598,16 +610,17 @@ function drawExoticInfoPanel(param: {
     }
     yy += LINEH + 1;
     yy--;
+    const BAR_FULL_W = INFO_PANEL_W - 7*2;
     drawBox({
       x: x + 7,
       y: yy,
       z,
-      w: INFO_PANEL_W - 7*2,
+      w: BAR_FULL_W,
       h: 3,
     }, autoAtlas('game', 'progress_bar'), 1);
     z++;
     if (exotic.knowledge) {
-      let bar_w = INFO_PANEL_W - 7*2;
+      let bar_w = BAR_FULL_W;
       if (exotic.knowledge < NUM_KNOBS) {
         bar_w = floor(exotic.knowledge / NUM_KNOBS * bar_w);
       }
@@ -620,7 +633,29 @@ function drawExoticInfoPanel(param: {
       }, autoAtlas('game', 'progress_fill'), 1);
     }
     z++;
+    spot({
+      x: x + 7,
+      y: yy,
+      w: BAR_FULL_W,
+      h: 3,
+      def: SPOT_DEFAULT_LABEL,
+      // eslint-disable-next-line max-len
+      tooltip: `${exotic.knowledge} of ${NUM_KNOBS} affinities known about this Exotic`,
+    });
     yy += 5;
+
+    spot({
+      x: x + CHW,
+      y: yy,
+      w: CHW * 11,
+      h: CHH * 2,
+      def: SPOT_DEFAULT_LABEL,
+      // eslint-disable-next-line max-len
+      tooltip: `This Exotic's known affinities.
+
+If you configure your probe's [c=dwarfs]DWARFS[/c] to match, you will be more likely to find this Exotic,` +
+' and the samples you find will be of higher value.',
+    });
 
     for (let jj = 0; jj < NUM_KNOBS; ++jj) {
       let xxx = xx + CHW + jj * CHW * 2;
@@ -920,10 +955,11 @@ Remember: keep your SPEED ` +
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
       markdownAuto({
         font_style: style_text,
-        x, y, z,
+        x: x + CHW,
+        y, z,
         text: `[c=dwarfs]${KNOBS[ii][0]}[/c]${KNOBS[ii].slice(1)}:`,
       });
-      let xx = x + w - KNOB_W * 3;
+      let xx = x + w - KNOB_W * 3 - 4;
       for (let jj = 0; jj < 3; ++jj) {
         let ret = button({
           x: xx, y,
@@ -1019,6 +1055,16 @@ Remember: keep your SPEED ` +
         x, y, z,
         text: 'DWARFS:',
       });
+      spot({
+        x: x,
+        y: y - 1,
+        w: CHW * KNOB_W + 2 + CHW * 7,
+        h: KNOB_W,
+        def: SPOT_DEFAULT_LABEL,
+        // eslint-disable-next-line max-len
+        tooltip: 'This record shows your configured [c=dwarfs]DWARFS[/c] when this Exotic was collected.',
+      });
+
       for (let jj = 0; jj < NUM_KNOBS; ++jj) {
         let xxx = x + CHW * 7 + jj * CHW;
         if (jj > 1) {
@@ -1116,7 +1162,8 @@ Remember: keep your SPEED ` +
   for (let ii = 0; ii < exotics.length; ++ii) {
     total_knowledge += exotics[ii].knowledge;
   }
-  if (total_knowledge >= 0.8 * NUM_KNOBS * exotics.length && !game_state.survey_done) {
+  let required_knowledge = ceil(0.8 * NUM_KNOBS * exotics.length);
+  if (total_knowledge >= required_knowledge && !game_state.survey_done) {
     button_w = 106;
     if (button({
       x: game_width - 1 - button_w - 4,
@@ -1137,9 +1184,21 @@ Remember: keep your SPEED ` +
       align: ALIGN.HRIGHT,
       text: game_state.survey_done ? 'Survey Bonus Claimed' : `Survey Bonus: $${game_state.survey_bonus}`,
     });
+    if (!game_state.survey_done) {
+      spot({
+        x: 200,
+        y,
+        w: game_width - 200,
+        h: CHH,
+        def: SPOT_DEFAULT_LABEL,
+        // eslint-disable-next-line max-len
+        tooltip: `${total_knowledge} of ${required_knowledge} required affinities discovered to claim survey bonus of $${game_state.survey_bonus}.`,
+      });
+
+    }
   }
 
-  if (keyUpEdge(KEYS.ESC)) {
+  if (keyUpEdge(KEYS.ESC) && !disabled) {
     queueTransition();
     engine.setState(stateTitle);
   }
@@ -1163,6 +1222,7 @@ let mining_result_state: {
   knowledge_start: number;
   done: boolean;
   value_given: number;
+  need_init: boolean;
 };
 const RESULT_W = INFO_PANEL_W + 40;
 const STUDY_ANIM_TIME = 1000;
@@ -1173,11 +1233,11 @@ function doMiningResult(dt: number): boolean {
     return false;
   }
 
-  let { recent_exotics, exotics } = game_state;
-  let recent = recent_exotics[0];
-  let exotic = exotics[recent.exotic];
-  let knowledge = exotic.knowledge;
-  if (autoResetSkippedFrames('mining_result')) {
+  if (!mining_result_state || mining_result_state.need_init) {
+    let { recent_exotics, exotics } = game_state;
+    let recent = recent_exotics[0];
+    let exotic = exotics[recent.exotic];
+    let knowledge = exotic.knowledge;
     mining_result_state = {
       is_new: knowledge === 0,
       stage: knowledge === NUM_KNOBS ? 'choice' : 'study',
@@ -1185,11 +1245,15 @@ function doMiningResult(dt: number): boolean {
       knowledge_start: knowledge,
       done: false,
       value_given: 0,
+      need_init: false,
     };
   }
   if (mining_result_state.done) {
     return false;
   }
+  let { recent_exotics, exotics } = game_state;
+  let recent = recent_exotics[0];
+  let exotic = exotics[recent.exotic];
 
   mining_result_state.t += dt;
 
@@ -1465,6 +1529,9 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
 
     if (mining_state.progress === maxp) {
       mining_state.done = true;
+      if (mining_result_state) {
+        mining_result_state.need_init = true;
+      }
       playUISound('success');
       game_state.findExotic();
       transition_time = 0;
@@ -1791,6 +1858,7 @@ function stateTitle(dt: number): void {
       y: y2,
       text: game_state ? 'NEW GAME' : 'START GAME',
     })) {
+      tut_state = 0;
       queueTransition();
       startNewGame();
     }
@@ -2039,6 +2107,7 @@ export function main(): void {
   engine.setState(stateTitle);
   if (engine.DEBUG && true) {
     startNewGame();
+    tut_state = 999;
     //startMining();
   } else if (engine.DEBUG && !true) {
     engine.setState(stateScores);

@@ -14,7 +14,6 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
-FTUE
 Visuals
   Eyes / snakes
 Balance
@@ -22,7 +21,6 @@ Balance
   Maybe Safety should never be quite as low - or, at least, make sure it increases quickly
 Polish
   Connect Speed / Safety bars to make it clear it's a threshold
-  Tooltips on DWARFS especially
   Change Armor/Speed/etc labels to be vertical on the side?
   Border color?
   Propeller on blimp
