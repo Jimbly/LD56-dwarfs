@@ -670,7 +670,7 @@ let last_music: GlovSoundSetUp | null;
 let playing_music: string | null;
 let loading_music: TSMap<true> = {};
 let loaded_music: TSMap<true> = {};
-let want_music = true;
+let want_music = !engine.DEBUG;
 function tickMusic(music_name: string | null): void {
   if (keyUpEdge(KEYS.M)) {
     want_music = !want_music;
@@ -1222,6 +1222,7 @@ function takeDamage(): void {
   }
 }
 let over_danger_time = 0;
+let next_wind_time = 0;
 function stateMine(dt: number): void {
   tickMusic(mining_state.progress > 0.75 ? null : 'music_ambient');
   dt = min(dt, 200);
@@ -1280,6 +1281,11 @@ function stateMine(dt: number): void {
         mining_state.danger += min(dprogress / time_to_target, 1) *
           danger_to_target;
       }
+    }
+
+    if (mining_state.speed > 0.5 && getFrameTimestamp() > next_wind_time) {
+      next_wind_time = getFrameTimestamp() + rand.floatBetween(4000, 10000);
+      playUISound('wind', (mining_state.speed - 0.5) * 2 * 0.75 + 0.25);
     }
 
     let over_danger = max(0, mining_state.speed - (1 - mining_state.danger));
@@ -1478,6 +1484,7 @@ export function main(): void {
       sell: { file: 'sell' },
       success: { file: 'success' },
       failure: { file: 'failure' },
+      wind: { file: 'wind', volume: 0.25 },
     },
   })) {
     return;

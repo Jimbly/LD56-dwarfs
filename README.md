@@ -15,12 +15,6 @@ Acknowledgements:
 Start with: `npm start` (after running `npm i` once)
 
 Change DWARFS to be a special color at the start of each word
-Audio
-  Configure menu sound track (maybe while not in mining end screen)
-  Mining ambient sound track
-    Ambient music, fades to 0 at end of progress?
-    Noises for when damage changes velocity
-    Noises for when speed is high
 Victory condition
   Fixed number of planets?
     Level seeding determines $Values, and all other parameters are pure random
