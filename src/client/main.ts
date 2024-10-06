@@ -1590,6 +1590,7 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
       // minimal stress accumulation based on real time
       mining_state.stress += AMBIENT_DAMAGE_RATE * dt;
       mining_state.stress = clamp(mining_state.stress, 0, 1);
+      over_danger_time = 0;
     } else {
       over_danger_time = 0;
     }
