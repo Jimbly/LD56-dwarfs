@@ -238,6 +238,8 @@ function matchInfo(exotic: ExoticDef, probe_config: number[], for_value: boolean
 
 let tut_state = 0;
 
+const PROBES_DEFAULT = 18;
+
 class GameState {
 
   level_idx = 1;
@@ -291,7 +293,7 @@ class GameState {
   initLevel(seed: number): void {
     rand_levelgen.reseed(seed);
     this.level_score = 0;
-    this.probes_left = 18;
+    this.probes_left = PROBES_DEFAULT;
     this.survey_bonus = 1500;
     this.survey_done = false;
     this.probe_config = [];
@@ -925,7 +927,7 @@ NOTE: Interplanetary Expeditions Ltd assures us the probes contain no actual dwa
 
 LAUNCH your first DWARF PROBE to discover an EXOTIC.`);
   } else if (tut_state === 2) {
-    game_state.probes_left = 24;
+    game_state.probes_left = PROBES_DEFAULT;
     tutPanel(1, 10, 240, `Your very first DWARF PROBE was lost!
 
 Remember: keep your SPEED ` +
