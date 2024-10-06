@@ -230,6 +230,8 @@ function matchInfo(exotic: ExoticDef, probe_config: number[], for_value: boolean
   };
 }
 
+let tut_state = 0;
+
 class GameState {
 
   level_idx = 1;
@@ -808,6 +810,41 @@ function tickMusic(music_name: string | null): void {
 }
 onEnterBackground(tickMusic.bind(null, null));
 
+function tutPanel(x: number, y: number, w: number, text: string, do_button?: string): void {
+  let z = Z.UI + 20;
+  let yy = y + 7;
+  let dims = markdownAuto({
+    font_style: style_text,
+    x: x + 7,
+    y: yy,
+    z: z + 1,
+    w: w - 7 * 2,
+    align: ALIGN.HWRAP,
+    line_height: uiTextHeight() + 1,
+    text,
+  });
+  yy += dims.h;
+  if (do_button) {
+    yy += 2;
+    let button_w = (do_button.length + 1) * CHW;
+    if (buttonText({
+      x: x + floor((w - button_w)/2),
+      y: yy,
+      z: z + 1,
+      w: button_w,
+      text: do_button,
+    })) {
+      tut_state++;
+    }
+    yy += BUTTON_H;
+  }
+  panel({
+    x, y, z,
+    w: dims.w + 7 * 2,
+    h: yy - y + 7,
+  });
+}
+
 function stateDroneConfig(dt: number): void {
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
   tickMusic('music_main');
@@ -835,7 +872,30 @@ function stateDroneConfig(dt: number): void {
 
   let { probes_left, probe_config, exotics, recent_exotics, endless_enabled } = game_state;
 
-  if (probes_left) {
+  if (tut_state === 0) {
+    // eslint-disable-next-line max-len
+    tutPanel(1, 1, 382, `EXOTIC RESOURCES have been discovered in the atmospheres of GAS GIANTS. Though we are just TINY CREATURES on these planets, sure to be CRUSHED if we venture TOO DEEP, we have built CONFIGURABLE PROBES, code-named DWARFS, to safely EXTRACT these EXOTICS.
+
+NOTE: Interplanetary Expeditions Ltd assures us the probes contain no actual dwarfs.`, 'Uh, huh...');
+    disabled = true;
+  } else if (tut_state === 1) {
+    tutPanel(1, 22, 220, `YOU have arrived at a GAS GIANT (the first of 3 in your Campaign).
+
+LAUNCH your first DWARF PROBE to discover an EXOTIC.`);
+  } else if (tut_state === 2) {
+    game_state.probes_left = 24;
+    tutPanel(1, 10, 240, `Your very first DWARF PROBE was lost!
+
+Remember: keep your SPEED ` +
+      'under the SAFETY range to keep it alive. Interplanetary Expeditions Ltd has sent you ' +
+      'an extra probe since you\'re clearly new at this.');
+  } else if (tut_state === 3 && !disabled) {
+    // eslint-disable-next-line max-len
+    tutPanel(20, 94, 344, `You can now CONFIGURE a DWARF's launch region, and what properties it scans for. As you learn more about the planet's Exotics (shown on the right), you can tune your [c=dwarfs]DWARFS[/c] to be MORE or LESS likely to find any specific Exotic. The launch region ([c=dwarfs]DW[/c]) strongly affects WHICH Exotic will be found. The properties ([c=dwarfs]ARFS[/c]) strongly affect the VALUE of the Exotics found.
+`, 'OK');
+  }
+
+  if (probes_left && tut_state > 2) {
     panel({
       x, y, z,
       w,
@@ -1000,6 +1060,9 @@ function stateDroneConfig(dt: number): void {
       sound_button: 'launch',
       hotkey: KEYS.SPACE,
     })) {
+      if (tut_state < 2) {
+        tut_state = 2;
+      }
       if (probes_left) {
         game_state.probes_left--;
         startMining();
@@ -1354,6 +1417,19 @@ function stateMine(dt: number): void {
   drawBG(dt, mining_state.progress);
 
   let do_accel = keyDown(KEYS.SPACE) || mouseDownAnywhere();
+
+  if (tut_state === 2) {
+    if (mining_state.progress < 0.75) {
+      tutPanel(1, 116 - 10, 160, `CLICK/TAP ANYWHERE or hold SPACE to ACCELERATE.
+
+But watch out!  If your SPEED is beyond the current SAFETY range, your will lose` +
+' ARMOR and potentially lose your DWARF.');
+    }
+    if (!do_accel && !mining_state.progress) {
+      dt = 0;
+    }
+  }
+
   let maxp = 1; // (0.7 + game_state.probe_config[0] * 0.3);
   let do_flicker = false;
   if (mining_state.done) {
@@ -1392,6 +1468,9 @@ function stateMine(dt: number): void {
       playUISound('success');
       game_state.findExotic();
       transition_time = 0;
+      if (tut_state === 2) {
+        tut_state = 3;
+      }
     } else {
       if (mining_state.progress >= mining_state.danger_target_time) {
         mining_state.danger_target_time += rand.floatBetween(0.05, 0.15);
@@ -1958,9 +2037,9 @@ export function main(): void {
 
   stateTitleInit();
   engine.setState(stateTitle);
-  if (engine.DEBUG && false) {
+  if (engine.DEBUG && true) {
     startNewGame();
-    startMining();
+    //startMining();
   } else if (engine.DEBUG && !true) {
     engine.setState(stateScores);
   }

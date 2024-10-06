@@ -14,16 +14,12 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
-Victory condition
-  After completing 3? planets, show high scores, give option to continue
-  High scores have 2 tables shown at once - 3-planet campaign score and Endless
-  Add title page & high scores
 FTUE
 Visuals
   Eyes / snakes
 Balance
   Maybe give 2 knowledge for dismantling?
-  Mayve Safety should never be quite as low - or, at least, make sure it increases quickly
+  Maybe Safety should never be quite as low - or, at least, make sure it increases quickly
 Polish
   Connect Speed / Safety bars to make it clear it's a threshold
   Tooltips on DWARFS especially
@@ -31,13 +27,6 @@ Polish
   Border color?
   Propeller on blimp
   More noticeable animation on study/dismantle, drip some pixels?
-FTUE
-  Story intro
-  Explain Exotics panel after studying
-  No configuration on first probe
-  If they fail, "let's try that again", and refund the probe
-    Maybe refund failed probes until they've succeeded twice
-  Explain DWARFS after first successful probe
 
 Gas Giant Game Plan
   Stats:
