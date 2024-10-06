@@ -27,6 +27,8 @@ import {
   keyUpEdge,
   mouseDownAnywhere,
 } from 'glov/client/input';
+import { markdownAuto } from 'glov/client/markdown';
+import { markdownSetColorStyle } from 'glov/client/markdown_renderables';
 import { netInit } from 'glov/client/net';
 import * as settings from 'glov/client/settings';
 import { shaderCreate } from 'glov/client/shaders';
@@ -212,7 +214,7 @@ class GameState {
   game_score = 0;
   constructor() {
     this.initLevel(1234);
-    if (engine.DEBUG && false) {
+    if (engine.DEBUG && true) {
       for (let ii = 0; ii < 23; ++ii) {
         this.findExoticDebug();
       }
@@ -400,6 +402,11 @@ function perc(v: number): string {
 
 let style_text = fontStyleColored(null, palette_font[PALETTE_TEXT]);
 const outline_width = 5.25;
+let style_dwarfs = fontStyle(null, {
+  color: palette_font[PALETTE_TEXT],
+  outline_color: palette_font[2],
+  outline_width,
+});
 
 let style_exotic = [
   fontStyle(style_text, {
@@ -525,12 +532,12 @@ function drawExoticInfoPanel(param: {
       }, autoAtlas('game', 'progress_fill'), 1);
     }
     z++;
-    yy += 4;
+    yy += 5;
 
     for (let jj = 0; jj < NUM_KNOBS; ++jj) {
       let xxx = xx + CHW + jj * CHW * 2;
       font.draw({
-        style: style_text,
+        style: style_dwarfs,
         x: xxx,
         y: yy,
         z,
@@ -743,11 +750,12 @@ function stateDroneConfig(dt: number): void {
   z++;
   y += 8;
 
-  font.draw({
+  markdownAuto({
     text: 'Configure DWARF',
-    style: style_text,
+    font_style: style_text,
     align: ALIGN.HCENTER,
-    x, y,
+    x: x + 1,
+    y,
     w,
   });
   y += LINEH + 2;
@@ -756,10 +764,10 @@ function stateDroneConfig(dt: number): void {
   w -= 7 * 2;
   let { probe_config, exotics, recent_exotics } = game_state;
   for (let ii = 0; ii < NUM_KNOBS; ++ii) {
-    font.draw({
-      style: style_text,
+    markdownAuto({
+      font_style: style_text,
       x, y, z,
-      text: `${KNOBS[ii]}:`,
+      text: `[c=dwarfs]${KNOBS[ii][0]}[/c]${KNOBS[ii].slice(1)}:`,
     });
     let xx = x + w - KNOB_W * 3;
     for (let jj = 0; jj < 3; ++jj) {
@@ -1500,11 +1508,12 @@ export function main(): void {
   buttonSetDefaultYOffs({
     'down': 1,
   });
+  markdownSetColorStyle('dwarfs', style_dwarfs);
 
   init();
 
   engine.setState(stateDroneConfig);
-  if (engine.DEBUG && true) {
+  if (engine.DEBUG && false) {
     startMining();
   }
 }

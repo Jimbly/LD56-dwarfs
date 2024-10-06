@@ -14,7 +14,6 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
-Change DWARFS to be a special color at the start of each word
 Victory condition
   Fixed number of planets?
     Level seeding determines $Values, and all other parameters are pure random
