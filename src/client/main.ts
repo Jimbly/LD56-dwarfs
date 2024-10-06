@@ -106,7 +106,7 @@ const game_height = 216;
 const INFO_PANEL_W = 118;
 const INFO_PANEL_H = 51;
 
-const GOAL_SCORE = 75000;
+const CAMPAIGN_PLANETS = 3;
 
 // Mining minigame balance
 const MIN_PROGRESS = 0.01; // if speed=0, still advance by this much
@@ -119,7 +119,8 @@ const DAMAGE_RATE = 0.002 * 0.5; // JK TEST
 const AMBIENT_DAMAGE_RATE = 0.000015 * 0.5; // JK TEST
 
 
-let rand = randCreate(1234);
+let rand = randCreate(Date.now());
+let rand_levelgen = randCreate(1234); // just for values
 
 const KNOBS = [
   'Depth',
@@ -143,6 +144,7 @@ type ExoticDef = {
   knowledge: number;
   knob_order: number[];
   exotic_style: number;
+  seed: number;
 };
 type RecentRecord = {
   exotic: number;
@@ -213,8 +215,8 @@ class GameState {
   level_idx = 1;
   game_score = 0;
   constructor() {
-    this.initLevel(1234);
-    if (engine.DEBUG && true) {
+    this.initLevel(this.level_idx);
+    if (engine.DEBUG && false) {
       for (let ii = 0; ii < 23; ++ii) {
         this.findExoticDebug();
       }
@@ -242,7 +244,7 @@ class GameState {
   survey_bonus!: number;
   survey_done!: boolean;
   initLevel(seed: number): void {
-    rand.reseed(seed);
+    rand_levelgen.reseed(seed);
     this.level_score = 0;
     this.probes_left = 24;
     this.survey_bonus = 1500;
@@ -255,17 +257,24 @@ class GameState {
 
     let num_exotics = 4;
     let exotics: ExoticDef[] = [];
+    let styles = [];
+    for (let ii = 0; ii < 5; ++ii) {
+      styles.push(ii);
+    }
     for (let ii = 0; ii < num_exotics; ++ii) {
+      let style_idx = rand.range(styles.length);
       let exotic: ExoticDef = {
         name: randomExoticName(),
         knobs: [],
-        value: 5 + rand.range(94),
+        value: 5 + rand_levelgen.range(94),
         total_value: 0,
         total_found: 0,
         knowledge: 0,
         knob_order: [],
-        exotic_style: rand.range(5),
+        exotic_style: styles[style_idx],
+        seed: rand_levelgen.range(100000000),
       };
+      styles.splice(style_idx, 1);
       for (let jj = 0; jj < NUM_KNOBS; ++jj) {
         exotic.knobs.push(rand.range(3));
         exotic.knob_order.push(jj);
@@ -312,10 +321,12 @@ class GameState {
     let a = lerp(match_perc, 0.1, 1);
     let b = lerp(match_perc, 0.5, 2);
     let c = max(0, lerp(match_perc, -0.1, 0.1));
-    let v = rand.random() * rand.random() * (b - a) + a;
-    while (rand.random() < c) {
-      v += rand.floatBetween(0.5, 1);
+    rand_levelgen.reseed(exotic.seed);
+    let v = rand_levelgen.random() * rand_levelgen.random() * (b - a) + a;
+    while (rand_levelgen.random() < c) {
+      v += rand_levelgen.floatBetween(0.5, 1);
     }
+    exotic.seed = rand_levelgen.range(100000000);
 
     // Rearrange if there's an undiscovered in the way
     while (choice > 0 && !exotics[choice-1].knowledge) {
@@ -625,6 +636,9 @@ function drawBG(dt: number, h: number): void {
   });
 
   let blimp_y_base = 100 - hoffs_float*3;
+  if (!game_state.probes_left) {
+    blimp_y_base -= 30;
+  }
   let blimp_y = blimp_y_base + bounce;
   autoAtlas('game', 'blimp').draw({
     x: 157 + bg_xoffs,
@@ -634,6 +648,9 @@ function drawBG(dt: number, h: number): void {
     h: 37,
   });
 
+  if (!game_state.probes_left) {
+    return;
+  }
   let probe_y = blimp_y + 33 + hoffs_float*3;
   probe_y -= round(clamp(map01(hoffs_float, 0, game_height * 0.25), 0, 1) * 40);
   autoAtlas('game', `probe${h ? floor(getFrameTimestamp() / 50) % 4 + 1 : 1}`).draw({
@@ -741,59 +758,63 @@ function stateDroneConfig(dt: number): void {
   let y = 14;
   let z = Z.UI;
   let w = CONFIGURE_PANEL_W;
-  panel({
-    x, y, z,
-    w,
-    h: CONFIGURE_PANEL_H,
-    eat_clicks: false,
-  });
-  z++;
-  y += 8;
 
-  markdownAuto({
-    text: 'Configure DWARF',
-    font_style: style_text,
-    align: ALIGN.HCENTER,
-    x: x + 1,
-    y,
-    w,
-  });
-  y += LINEH + 2;
+  let { probes_left, probe_config, exotics, recent_exotics } = game_state;
 
-  x += 7;
-  w -= 7 * 2;
-  let { probe_config, exotics, recent_exotics } = game_state;
-  for (let ii = 0; ii < NUM_KNOBS; ++ii) {
-    markdownAuto({
-      font_style: style_text,
+  if (probes_left) {
+    panel({
       x, y, z,
-      text: `[c=dwarfs]${KNOBS[ii][0]}[/c]${KNOBS[ii].slice(1)}:`,
+      w,
+      h: CONFIGURE_PANEL_H,
+      eat_clicks: false,
     });
-    let xx = x + w - KNOB_W * 3;
-    for (let jj = 0; jj < 3; ++jj) {
-      let ret = button({
-        x: xx, y,
-        w: KNOB_W,
-        h: KNOB_W,
-        no_bg: true,
-        text: ' ',
-        sound_button: `button_click${jj+1}`,
-        disabled: probe_config[ii] === jj || disabled,
+    z++;
+    y += 8;
+
+    markdownAuto({
+      text: 'Configure DWARF',
+      font_style: style_text,
+      align: ALIGN.HCENTER,
+      x: x + 1,
+      y,
+      w,
+    });
+    y += LINEH + 2;
+
+    x += 7;
+    w -= 7 * 2;
+    for (let ii = 0; ii < NUM_KNOBS; ++ii) {
+      markdownAuto({
+        font_style: style_text,
+        x, y, z,
+        text: `[c=dwarfs]${KNOBS[ii][0]}[/c]${KNOBS[ii].slice(1)}:`,
       });
-      if (ret) {
-        probe_config[ii] = jj;
+      let xx = x + w - KNOB_W * 3;
+      for (let jj = 0; jj < 3; ++jj) {
+        let ret = button({
+          x: xx, y,
+          w: KNOB_W,
+          h: KNOB_W,
+          no_bg: true,
+          text: ' ',
+          sound_button: `button_click${jj+1}`,
+          disabled: probe_config[ii] === jj || disabled,
+        });
+        if (ret) {
+          probe_config[ii] = jj;
+        }
+        sprite_toggles.draw({
+          x: xx,
+          y, z,
+          w: KNOB_W, h: KNOB_W,
+          frame: jj + (buttonWasFocused() ? 6 : 0) + (probe_config[ii] === jj ? 3 : 0),
+        });
+        xx += KNOB_W;
       }
-      sprite_toggles.draw({
-        x: xx,
-        y, z,
-        w: KNOB_W, h: KNOB_W,
-        frame: jj + (buttonWasFocused() ? 6 : 0) + (probe_config[ii] === jj ? 3 : 0),
-      });
-      xx += KNOB_W;
-    }
-    y += LINEH;
-    if (ii === 1) {
-      y += 4;
+      y += LINEH;
+      if (ii === 1) {
+        y += 4;
+      }
     }
   }
 
@@ -890,8 +911,10 @@ function stateDroneConfig(dt: number): void {
     });
   }
 
+  let planets_left = CAMPAIGN_PLANETS - game_state.level_idx;
+
   let button_w = 95;
-  y = 164;
+  y = probes_left ? 164 : 150;
   z = Z.UI;
   if (!disabled) {
     if (buttonText({
@@ -899,28 +922,42 @@ function stateDroneConfig(dt: number): void {
       y, z,
       w: button_w,
       disabled,
-      text: game_state.probes_left ? 'LAUNCH!' : 'Next Planet',
+      text: probes_left ? 'LAUNCH!' : planets_left ? 'Next Planet' : 'FINISH',
       sound_button: 'launch',
       hotkey: KEYS.SPACE,
     })) {
-      if (game_state.probes_left) {
+      if (probes_left) {
         game_state.probes_left--;
         startMining();
       } else {
         queueTransition();
-        game_state.initLevel(game_state.level_idx++);
+        if (planets_left) {
+          game_state.initLevel(++game_state.level_idx);
+        } else {
+          // To high scores
+        }
       }
     }
   }
   y += uiButtonHeight() + 2;
   if (!disabled) {
-    drawNonPanel({
-      color: palette_font[3],
-      x: 0, y, z,
-      w: game_width,
-      align: ALIGN.HCENTER,
-      text: `${game_state.probes_left} ${plural(game_state.probes_left, 'Probe')} left`,
-    });
+    if (probes_left) {
+      drawNonPanel({
+        color: palette_font[3],
+        x: 0, y, z,
+        w: game_width,
+        align: ALIGN.HCENTER,
+        text: `${probes_left} ${plural(probes_left, 'Probe')} left`,
+      });
+    } else {
+      drawNonPanel({
+        color: palette_font[3],
+        x: 0, y, z,
+        w: game_width,
+        align: ALIGN.HCENTER | ALIGN.HWRAP,
+        text: `${planets_left} ${plural(planets_left, 'Planet')} left\nin campaign`,
+      });
+    }
   }
 
   z = Z.UI;
@@ -934,7 +971,7 @@ function stateDroneConfig(dt: number): void {
   drawNonPanel({
     color: palette_font[3],
     x: 1, y, z,
-    text: `$${game_state.game_score}/$${GOAL_SCORE} Campaign`,
+    text: `$${game_state.game_score} Campaign Score`,
   });
 
   y = game_height - LINEH - 1;

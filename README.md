@@ -15,12 +15,10 @@ Acknowledgements:
 Start with: `npm start` (after running `npm i` once)
 
 Victory condition
-  Fixed number of planets?
-    Level seeding determines $Values, and all other parameters are pure random
-      Possibly seeded random for values of each find for consistency too
   After completing 3? planets, show high scores, give option to continue
   High scores have 2 tables shown at once - 3-planet campaign score and Endless
   Add title page & high scores
+FTUE
 Visuals
   Eyes / snakes
 Balance
@@ -34,6 +32,8 @@ Polish
   Propeller on blimp
   More noticeable animation on study/dismantle, drip some pixels?
 FTUE
+  Story intro
+  Explain Exotics panel after studying
   No configuration on first probe
   If they fail, "let's try that again", and refund the probe
     Maybe refund failed probes until they've succeeded twice
