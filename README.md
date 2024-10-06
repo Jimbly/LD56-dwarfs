@@ -9,8 +9,7 @@ Ludum Dare 56 Entry by Jimbly - "DWARFS"
 Acknowledgements:
 * [IBM BIOS Font](https://int10h.org/oldschool-pc-fonts/fontlist/font?ibm_bios)
 * [BGB Gameboy Palette](https://lospec.com/palette-list/nintendo-gameboy-bgb)
-* Maybe [CGA MIBEND4 Palette](https://lospec.com/palette-list/cga-mibend4)
-* Warp shader derived from [shadertoy/lsl3RH](https://www.shadertoy.com/view/lsl3RH)
+* Gas Giant shader derived from [shadertoy/lsl3RH](https://www.shadertoy.com/view/lsl3RH)
 
 Start with: `npm start` (after running `npm i` once)
 

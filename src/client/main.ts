@@ -76,6 +76,7 @@ import {
   scaleSizes,
   setButtonHeight,
   setFontHeight,
+  setFontStyles,
   uiButtonHeight,
   uiGetFont,
   uiSetPanelColor,
@@ -1705,7 +1706,7 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
   let hbar_x = (game_width - BAR_LONG_SIZE) / 2;
   // let hbar_x = 64;
   drawHBar(hbar_x, 8, 'Progress', mining_state.progress / maxp);
-  let vbar_y = 54;
+  let vbar_y = 64;
   let flicker = do_flicker ? over_danger_time % 200 < 100 : false;
   let x0 = 186;
   let x1 = x0 + 17;
@@ -2109,8 +2110,10 @@ export function main(): void {
     return;
   }
   // let font = engine.font;
-  v4copy(engine.border_color, palette[PALETTE_BG]);
+  v4copy(engine.border_clear_color, palette[0]);
+  v4copy(engine.border_color, palette[0]);
   font = uiGetFont();
+  setFontStyles(style_text, null, null, null);
 
   // Perfect sizes for pixely modes
   scaleSizes(13 / 32);
