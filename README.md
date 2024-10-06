@@ -20,7 +20,6 @@ Balance
   Maybe give 2 knowledge for dismantling?
 Polish
   Border color?
-  More noticeable animation on study/dismantle, drip some pixels?
 
 Gas Giant Game Plan
   Stats:

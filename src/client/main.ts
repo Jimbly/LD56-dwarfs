@@ -611,6 +611,7 @@ function drawExoticInfoPanel(param: {
     yy += LINEH + 1;
     yy--;
     const BAR_FULL_W = INFO_PANEL_W - 7*2;
+    let blink = shouldBlinkBar(exotic) && getFrameTimestamp() % 200 < 100;
     drawBox({
       x: x + 7,
       y: yy,
@@ -630,7 +631,7 @@ function drawExoticInfoPanel(param: {
         z,
         w: bar_w,
         h: 3,
-      }, autoAtlas('game', 'progress_fill'), 1);
+      }, autoAtlas('game', blink ? 'progress_fill_blink' : 'progress_fill'), 1);
     }
     z++;
     spot({
@@ -1008,7 +1009,7 @@ Remember: keep your SPEED ` +
       exotic,
       style: ii === 0 ? 'panel_info' : 'panel_info_overlay',
       show_match: true,
-      allow_undiscovered: true
+      allow_undiscovered: true,
     });
     y -= 5;
   }
@@ -1224,6 +1225,17 @@ let mining_result_state: {
   value_given: number;
   need_init: boolean;
 };
+function shouldBlinkBar(exotic: ExoticDef): boolean {
+  if (!mining_result_state || mining_result_state.done) {
+    return false;
+  }
+  if (mining_result_state.stage === 'study_anim' || mining_result_state.stage === 'dismantle_anim') {
+    if (game_state.exotics[game_state.recent_exotics[0].exotic] === exotic) {
+      return true;
+    }
+  }
+  return false;
+}
 const RESULT_W = INFO_PANEL_W + 40;
 const STUDY_ANIM_TIME = 1000;
 const SELL_ANIM_TIME = 1000;
