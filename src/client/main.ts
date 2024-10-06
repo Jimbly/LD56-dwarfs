@@ -11,6 +11,8 @@ import * as engine from 'glov/client/engine';
 import {
   getFrameIndex,
   getFrameTimestamp,
+  isInBackground,
+  onEnterBackground,
 } from 'glov/client/engine';
 import {
   ALIGN,
@@ -22,10 +24,18 @@ import {
 import {
   KEYS,
   keyDown,
+  keyUpEdge,
   mouseDownAnywhere,
 } from 'glov/client/input';
 import { netInit } from 'glov/client/net';
+import * as settings from 'glov/client/settings';
 import { shaderCreate } from 'glov/client/shaders';
+import {
+  GlovSoundSetUp,
+  soundLoad,
+  soundPlay,
+  soundResumed,
+} from 'glov/client/sound';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import {
   Shader,
@@ -58,6 +68,7 @@ import {
   randCreate,
   shuffleArray,
 } from 'glov/common/rand_alea';
+import { TSMap } from 'glov/common/types';
 import { clamp, lerp, map01, plural } from 'glov/common/util';
 import {
   unit_vec,
@@ -654,9 +665,54 @@ function drawNonPanel(param: FontDrawOpts): void {
   }
 }
 
+settings.settingsSet('volume_music', 0.25);
+let last_music: GlovSoundSetUp | null;
+let playing_music: string | null;
+let loading_music: TSMap<true> = {};
+let loaded_music: TSMap<true> = {};
+let want_music = true;
+function tickMusic(music_name: string | null): void {
+  if (keyUpEdge(KEYS.M)) {
+    want_music = !want_music;
+  }
+  if (!settings.volume || isInBackground() || !want_music) {
+    music_name = null;
+  }
+  if (music_name && !loading_music[music_name]) {
+    loading_music[music_name] = true;
+    soundLoad(music_name, { loop: true }, function () {
+      loaded_music[music_name!] = true; // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+      if (playing_music === music_name) {
+        last_music = soundPlay(music_name!, 0.01, true); // ! is workaround TypeScript bug fixed in v5.4.0 TODO: REMOVE
+        if (last_music) {
+          last_music.fade(1, 2500);
+        }
+      }
+    });
+  }
+  if (!soundResumed()) {
+    return;
+  }
+  if (playing_music !== music_name) {
+    if (last_music) {
+      last_music.fade(0, 5000);
+      last_music = null;
+    }
+    if (music_name && loaded_music[music_name]) {
+      last_music = soundPlay(music_name, 0.01, true);
+      if (last_music) {
+        last_music.fade(1, 2500);
+      }
+    }
+    playing_music = music_name;
+  }
+}
+onEnterBackground(tickMusic.bind(null, null));
+
 function stateDroneConfig(dt: number): void {
   let font = uiGetFont();
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
+  tickMusic('music_main');
 
   drawBG(dt, 0);
 
@@ -1167,6 +1223,7 @@ function takeDamage(): void {
 }
 let over_danger_time = 0;
 function stateMine(dt: number): void {
+  tickMusic(mining_state.progress > 0.75 ? null : 'music_ambient');
   dt = min(dt, 200);
   let font = uiGetFont();
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
@@ -1406,7 +1463,7 @@ export function main(): void {
     ui_sprites,
     pixel_perfect,
     ui_sounds: {
-      rollover: { file: 'rollover', volume: 0.1 },
+      rollover: { file: 'rollover', volume: 0.05 },
       button_click: { file: 'button_click' },
       button_click1: { file: 'button_click1' },
       button_click2: { file: 'button_click' },
