@@ -18,12 +18,8 @@ Visuals
   Eyes / snakes
 Balance
   Maybe give 2 knowledge for dismantling?
-  Maybe Safety should never be quite as low - or, at least, make sure it increases quickly
 Polish
-  Connect Speed / Safety bars to make it clear it's a threshold
-  Change Armor/Speed/etc labels to be vertical on the side?
   Border color?
-  Propeller on blimp
   More noticeable animation on study/dismantle, drip some pixels?
 
 Gas Giant Game Plan

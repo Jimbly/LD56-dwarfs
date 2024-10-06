@@ -91,7 +91,7 @@ import {
   vec4,
 } from 'glov/common/vmath';
 
-const { abs, ceil, floor, max, min, round } = Math;
+const { abs, ceil, floor, max, min, round, PI } = Math;
 
 const palette_font = [
   0x081820ff,
@@ -1541,7 +1541,7 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
     } else {
       if (mining_state.progress >= mining_state.danger_target_time) {
         mining_state.danger_target_time += rand.floatBetween(0.05, 0.15);
-        mining_state.danger_target = rand.floatBetween(0, 0.8);
+        mining_state.danger_target = rand.floatBetween(0, 0.7);
       }
       let time_to_target = mining_state.danger_target_time - mining_state.progress;
       if (time_to_target > 0) {
@@ -1629,7 +1629,7 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
     }, autoAtlas('game', 'hbar_fill'));
   }
 
-  function drawVBar(style: string, x: number, y: number, label: string, p: number): void {
+  function drawVBar(style: string, x: number, y: number, label: string, p: number, label_right: boolean): void {
     let z = Z.UI;
     let h = BAR_LONG_SIZE;
     panel({
@@ -1657,25 +1657,27 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
       w: BAR_SHORT_SIZE,
       h: fill_w,
     }, autoAtlas('game', `${style}_fill`));
-    y += BAR_LONG_SIZE + 3;
+    // y += BAR_LONG_SIZE + 3;
 
-    let x_mid = x + BAR_SHORT_SIZE/2;
     let text_w = font.draw({
       style: style_text,
-      x: x_mid,
-      y: y + 6,
+      x: label_right ? x + BAR_SHORT_SIZE + 9 : x - CHH - 1,
+      y: y + BAR_LONG_SIZE/2,
       z: z + 1,
       w: 0,
-      align: ALIGN.HCENTER,
+      h: 0,
+      align: ALIGN.HVCENTER,
       text: label,
+      rot: label_right ? PI/2 : -PI/2,
     });
     text_w += 7 * 2;
+    let y_mid = y + BAR_LONG_SIZE/2;
     panel({
-      x: x_mid - ceil(text_w/2),
-      y,
-      z,
-      w: text_w,
-      h: CHH + 12,
+      x: label_right ? x + BAR_SHORT_SIZE - 5 : x - 19,
+      y: y_mid - text_w / 2,
+      z: z - 3,
+      w: CHW + 7 * 2 + 2,
+      h: text_w,
     });
     y += CHH + 7;
     z+=2;
@@ -1687,13 +1689,13 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
   let vbar_y = 54;
   let flicker = do_flicker ? over_danger_time % 200 < 100 : false;
   let x0 = 186;
-  let x1 = x0 + 59;
-  let x2 = x1 + 59;
+  let x1 = x0 + 17;
+  let x2 = x1 + 55;
   let armor_flicker = mining_state.stress > 0.9 ? getFrameTimestamp() % 200 < 100 : false;
-  drawVBar(armor_flicker ? 'vbar' : 'vbar2', x0, vbar_y, 'Armor', 1 - mining_state.stress);
-  drawVBar(flicker ? 'vbar' : 'vbar2', x1, vbar_y, 'Speed', mining_state.speed);
-  drawVBar(flicker ? 'vbar2' : 'vbar', x2, vbar_y,
-    'Safety', 1 - mining_state.danger);
+  drawVBar(flicker ? 'vbar' : 'vbar2', x0, vbar_y, 'Speed', mining_state.speed, false);
+  drawVBar(flicker ? 'vbar2' : 'vbar', x1, vbar_y,
+    'Safety', 1 - mining_state.danger, true);
+  drawVBar(armor_flicker ? 'vbar' : 'vbar2', x2, vbar_y, 'Armor', 1 - mining_state.stress, false);
 }
 
 function startMining(): void {
@@ -2108,7 +2110,7 @@ export function main(): void {
   if (engine.DEBUG && true) {
     startNewGame();
     tut_state = 999;
-    //startMining();
+    startMining();
   } else if (engine.DEBUG && !true) {
     engine.setState(stateScores);
   }
