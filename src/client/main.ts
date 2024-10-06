@@ -4,6 +4,7 @@
 const local_storage = require('glov/client/local_storage');
 local_storage.setStoragePrefix('LD56'); // Before requiring anything else that might load from this
 
+import { AnimationSequencer, animationSequencerCreate } from 'glov/client/animation';
 import { autoResetSkippedFrames } from 'glov/client/auto_reset';
 import { autoAtlas } from 'glov/client/autoatlas';
 import * as camera2d from 'glov/client/camera2d';
@@ -16,6 +17,7 @@ import {
 } from 'glov/client/engine';
 import {
   ALIGN,
+  Font,
   FontDrawOpts,
   fontStyle,
   fontStyleColored,
@@ -23,6 +25,7 @@ import {
 } from 'glov/client/font';
 import {
   KEYS,
+  eatAllInput,
   keyDown,
   keyUpEdge,
   mouseDownAnywhere,
@@ -71,7 +74,7 @@ import {
   shuffleArray,
 } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
-import { clamp, lerp, map01, plural } from 'glov/common/util';
+import { clamp, easeOut, lerp, map01, plural } from 'glov/common/util';
 import {
   unit_vec,
   v4copy,
@@ -103,6 +106,8 @@ const CHW = 8;
 const game_width = 384; // 1920x1080 / 5
 const game_height = 216;
 
+const BUTTON_H = 15;
+
 const INFO_PANEL_W = 118;
 const INFO_PANEL_H = 51;
 
@@ -121,6 +126,8 @@ const AMBIENT_DAMAGE_RATE = 0.000015 * 0.5; // JK TEST
 
 let rand = randCreate(Date.now());
 let rand_levelgen = randCreate(1234); // just for values
+
+let font: Font;
 
 const KNOBS = [
   'Depth',
@@ -350,6 +357,8 @@ class GameState {
 }
 
 let sprite_toggles: Sprite;
+let sprite_title_gradient: Sprite;
+let sprite_title_planet: Sprite;
 let game_state: GameState;
 let sprite_dither: Sprite;
 let shader_dither: Shader;
@@ -367,10 +376,24 @@ function init(): void {
     wrap_s: gl.REPEAT,
     wrap_t: gl.REPEAT,
   });
+  sprite_title_planet = spriteCreate({
+    name: 'title_planet',
+    wrap_s: gl.CLAMP_TO_EDGE,
+    wrap_t: gl.CLAMP_TO_EDGE,
+  });
+  sprite_title_gradient = spriteCreate({
+    name: 'title_gradient',
+    wrap_s: gl.REPEAT,
+    wrap_t: gl.CLAMP_TO_EDGE,
+  });
   shader_dither = shaderCreate('shaders/dither.fp');
   shader_dither_transition = shaderCreate('shaders/dither_transition.fp');
   shader_gas_giant = shaderCreate('shaders/test.fp');
+}
+
+function startNewGame(): void {
   game_state = new GameState();
+  engine.setState(stateDroneConfig);
 }
 
 function fadeDither(
@@ -459,7 +482,6 @@ function drawExoticInfoPanel(param: {
   allow_undiscovered: boolean;
 }): number {
   let { x, y, z, exotic, style, show_match, allow_undiscovered } = param;
-  let font = uiGetFont();
   let w = INFO_PANEL_W;
   panel({
     x, y, z,
@@ -734,7 +756,6 @@ function tickMusic(music_name: string | null): void {
 onEnterBackground(tickMusic.bind(null, null));
 
 function stateDroneConfig(dt: number): void {
-  let font = uiGetFont();
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
   tickMusic('music_main');
 
@@ -1002,6 +1023,11 @@ function stateDroneConfig(dt: number): void {
       text: game_state.survey_done ? 'Survey Bonus Claimed' : `Survey Bonus: $${game_state.survey_bonus}`,
     });
   }
+
+  if (keyUpEdge(KEYS.ESC)) {
+    queueTransition();
+    engine.setState(stateTitle);
+  }
 }
 
 let mining_state: {
@@ -1028,7 +1054,6 @@ const STUDY_ANIM_TIME = 1000;
 const SELL_ANIM_TIME = 1000;
 let mr_ymax = 0;
 function doMiningResult(dt: number): boolean {
-  let font = uiGetFont();
   if (!mining_state || mining_state.stress >= 1) {
     return false;
   }
@@ -1271,7 +1296,6 @@ let next_wind_time = 0;
 function stateMine(dt: number): void {
   tickMusic(mining_state.progress > 0.75 ? null : 'music_ambient');
   dt = min(dt, 200);
-  let font = uiGetFont();
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
 
   drawBG(dt, mining_state.progress);
@@ -1488,6 +1512,188 @@ function startMining(): void {
   };
 }
 
+let title_anim: AnimationSequencer | null = null;
+let title_alpha = {
+  title: 0,
+  sub: 0,
+  button: 0,
+  gradient: 0,
+  planet: 0,
+  ship_x: 0,
+};
+function stateTitleInit(): void {
+  title_anim = animationSequencerCreate();
+  let t = 0;
+
+  title_anim.add(0, 4000, (progress) => {
+    title_alpha.gradient = progress;
+  });
+
+  title_anim.add(0, 3500, (progress) => {
+    title_alpha.ship_x = progress;
+  });
+
+  title_anim.add(300, 5000, (progress) => {
+    title_alpha.planet = progress;
+  });
+
+  t = title_anim.add(1500, 300, (progress) => {
+    title_alpha.title = progress;
+  });
+  t = title_anim.add(t + 300, 300, (progress) => {
+    title_alpha.sub = progress;
+  });
+  title_anim.add(t + 500, 300, (progress) => {
+    title_alpha.button = progress;
+  });
+}
+const style_title = fontStyle(null, {
+  color: palette_font[3],
+  outline_color: palette_font[0],
+  outline_width,
+});
+function stateTitle(dt: number): void {
+  tickMusic('music_ambient');
+  gl.clearColor(palette[0][0], palette[0][1], palette[0][2], 1);
+
+  let W = game_width;
+  let H = game_height;
+
+  if (title_anim && (mouseDownAnywhere() || engine.DEBUG)) {
+    title_anim.update(Infinity);
+    title_anim = null;
+  }
+  if (title_anim) {
+    if (!title_anim.update(dt)) {
+      title_anim = null;
+    } else {
+      eatAllInput();
+    }
+  }
+
+
+  let z = 1;
+
+  sprite_title_gradient.draw({
+    x: 0,
+    y: lerp(easeOut(title_alpha.gradient, 2), -384, -250),
+    z,
+    w: game_width,
+    h: 384,
+  });
+  z++;
+  if (title_alpha.planet) {
+    sprite_title_planet.draw({
+      x: 0,
+      y: lerp(easeOut(title_alpha.planet, 2), game_height, 50),
+      z,
+      w: game_width,
+      h: game_height,
+    });
+  }
+  z++;
+
+  let blimp_x = lerp(easeOut(title_alpha.ship_x, 2), game_width, 150);
+  let bounce = Math.sin(getFrameTimestamp() * 0.005) * 4;
+  let blimp_y = 74 + bounce;
+  autoAtlas('game', 'blimp').draw({
+    x: blimp_x,
+    y: blimp_y,
+    z: 3,
+    w: 80,
+    h: 37,
+  });
+
+  // let probe_y = blimp_y + 33;
+  // autoAtlas('game', 'probe1').draw({
+  //   x: blimp_x + 29,
+  //   y: probe_y,
+  //   z: 3,
+  //   w: 25,
+  //   h: 29,
+  // });
+
+  let y = 12;
+
+  let title_x = 7;
+  font.draw({
+    style: style_title,
+    alpha: title_alpha.title,
+    x: title_x, y, w: W, align: ALIGN.HCENTER,
+    size: CHH * 4,
+    text: 'DWA   ',
+  });
+  font.draw({
+    style: style_title,
+    alpha: title_alpha.title,
+    x: title_x - 4, y, w: W, align: ALIGN.HCENTER,
+    size: CHH * 4,
+    text: '   RFS',
+  });
+
+  font.draw({
+    color: palette_font[0],
+    alpha: title_alpha.sub,
+    x: 0,
+    y: H - CHH * 2,
+    w: W, align: ALIGN.HCENTER,
+    text: 'By Jimb Esser in 48 hours for Ludum Dare 56',
+  });
+
+  const PROMPT_PAD = 8;
+  if (title_alpha.button) {
+    let button_w = BUTTON_H * 8;
+    let button_x0 = floor((W - button_w * 2 - PROMPT_PAD) / 2);
+    let button_h = BUTTON_H;
+    let color = [1,1,1, title_alpha.button] as const;
+    let y2 = H - BUTTON_H - 40;
+    let button_param = {
+      color,
+      w: button_w,
+      h: button_h,
+    };
+
+    if (button({
+      ...button_param,
+      x: button_x0,
+      y: y2,
+      text: game_state ? 'NEW GAME' : 'START GAME',
+    })) {
+      queueTransition();
+      startNewGame();
+    }
+
+    if (buttonText({
+      ...button_param,
+      x: button_x0 + button_w + PROMPT_PAD,
+      y: y2,
+      text: 'HIGH SCORES',
+    })) {
+      // TODO
+    }
+
+    if (game_state) {
+      y2 += BUTTON_H + 4;
+      if (button({
+        ...button_param,
+        x: floor(button_x0 + (button_w + PROMPT_PAD)/2),
+        y: y2,
+        text: 'RESUME GAME',
+      })) {
+        queueTransition();
+        engine.setState(stateDroneConfig);
+      }
+    }
+  }
+
+  // font.draw({
+  //   color: palette_font[9],
+  //   alpha: title_alpha.sub,
+  //   x: 0, y: game_height - CHH - 8, w: W, align: ALIGN.HCENTER,
+  //   text: 'Copywrite 1977 QuantumPulse Ltd, Novi Grad, Sokovia',
+  // });
+}
+
 export function main(): void {
   if (engine.DEBUG) {
     // Enable auto-reload, etc
@@ -1536,10 +1742,11 @@ export function main(): void {
   }
   // let font = engine.font;
   v4copy(engine.border_color, palette[PALETTE_BG]);
+  font = uiGetFont();
 
   // Perfect sizes for pixely modes
   scaleSizes(13 / 32);
-  setButtonHeight(15);
+  setButtonHeight(BUTTON_H);
   setFontHeight(8);
   uiSetPanelColor(unit_vec);
   buttonSetDefaultYOffs({
@@ -1549,8 +1756,10 @@ export function main(): void {
 
   init();
 
-  engine.setState(stateDroneConfig);
+  stateTitleInit();
+  engine.setState(stateTitle);
   if (engine.DEBUG && false) {
+    startNewGame();
     startMining();
   }
 }
