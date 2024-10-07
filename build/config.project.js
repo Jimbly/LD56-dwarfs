@@ -1,3 +1,11 @@
 module.exports = function (config) {
-  // nothing; pure defaults
+  config.extra_index.push({
+    // example .zip for itch.io publishing
+    name: 'itch',
+    defines: {
+      ...config.default_defines,
+      PLATFORM: 'web',
+    },
+    zip: true,
+  });
 };
