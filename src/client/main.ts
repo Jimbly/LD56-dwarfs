@@ -155,6 +155,8 @@ const NUM_KNOBS = KNOBS.length;
 const CONFIGURE_PANEL_W = 138;
 const CONFIGURE_PANEL_H = 71 - 5 * CHH + NUM_KNOBS * CHH + 4;
 
+const SURVEY_BONUS = 400;
+
 type ExoticDef = {
   name: string;
   knobs: number[];
@@ -165,6 +167,7 @@ type ExoticDef = {
   knob_order: number[];
   exotic_style: number;
   seed: number;
+  survey_done: boolean;
 };
 type RecentRecord = {
   exotic: number;
@@ -288,14 +291,10 @@ class GameState {
   probe_config!: number[];
   exotics!: ExoticDef[];
   recent_exotics!: RecentRecord[];
-  survey_bonus!: number;
-  survey_done!: boolean;
   initLevel(seed: number): void {
     rand_levelgen.reseed(seed);
     this.level_score = 0;
     this.probes_left = PROBES_DEFAULT;
-    this.survey_bonus = 1500;
-    this.survey_done = false;
     this.probe_config = [];
 
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
@@ -320,6 +319,7 @@ class GameState {
         knob_order: [],
         exotic_style: styles[style_idx],
         seed: rand_levelgen.range(100000000),
+        survey_done: false,
       };
       styles.splice(style_idx, 1);
       for (let jj = 0; jj < NUM_KNOBS; ++jj) {
@@ -445,8 +445,8 @@ function init(): void {
       };
     },
     level_defs: 2,
-    score_key: 'LD56',
-    ls_key: 'ld56',
+    score_key: 'LD56b',
+    ls_key: 'ld56b',
     asc: false,
     rel: 8,
     num_names: 3,
@@ -639,58 +639,82 @@ function drawExoticInfoPanel(param: {
       }, autoAtlas('game', blink ? 'progress_fill_blink' : 'progress_fill'), 1);
     }
     z++;
+    let can_claim = exotic.knowledge === NUM_KNOBS && !exotic.survey_done;
+    let tooltip = `[c=1]${exotic.knowledge}[/c] of [c=1]${NUM_KNOBS}[/c] affinities known about this Exotic.
+${exotic.survey_done ? 'SURVEY BONUS claimed' : `[c=1]$${SURVEY_BONUS}[/c] SURVEY BONUS for complete knowledge.`}`;
     spot({
       x: x + 7,
       y: yy,
       w: BAR_FULL_W,
-      h: 3,
+      h: 3 + (can_claim ? LINEH : 0),
       def: SPOT_DEFAULT_LABEL,
-      // eslint-disable-next-line max-len
-      tooltip: `${exotic.knowledge} of ${NUM_KNOBS} affinities known about this Exotic`,
+      tooltip,
     });
     yy += 5;
 
-    spot({
-      x: x + CHW,
-      y: yy,
-      w: CHW * 11,
-      h: CHH * 2,
-      def: SPOT_DEFAULT_LABEL,
-      // eslint-disable-next-line max-len
-      tooltip: `This Exotic's known affinities.
+    if (can_claim) {
+      font.draw({
+        color: palette_font[0],
+        x: xx,
+        y: yy, z,
+        w,
+        align: ALIGN.HCENTER,
+        text: '100% KNOWN!',
+      });
+      yy += LINEH;
+      if (buttonText({
+        x: xx, y: yy, z,
+        w,
+        text: 'CLAIM BONUNS',
+        tooltip,
+        sound_button: 'sell'
+      })) {
+        exotic.survey_done = true;
+        game_state.addScore(SURVEY_BONUS);
+      }
+    } else {
+
+      spot({
+        x: x + CHW,
+        y: yy,
+        w: CHW * 11,
+        h: CHH * 2,
+        def: SPOT_DEFAULT_LABEL,
+        tooltip: `This Exotic's known affinities.
 
 If you configure your probe's [c=dwarfs]DWARFS[/c] to match, you will be more likely to find this Exotic,` +
 ' and the samples you find will be of higher value.',
-    });
+      });
 
-    for (let jj = 0; jj < NUM_KNOBS; ++jj) {
-      let xxx = xx + CHW + jj * CHW * 2;
+      for (let jj = 0; jj < NUM_KNOBS; ++jj) {
+        let xxx = xx + CHW + jj * CHW * 2;
+        font.draw({
+          style: style_dwarfs,
+          x: xxx,
+          y: yy,
+          z,
+          text: KNOBS[jj][0],
+        });
+        let known = knobKnown(exotic, jj);
+
+        sprite_toggles.draw({
+          x: xxx - 1,
+          y: yy + CHH,
+          z,
+          w: KNOB_W, h: KNOB_W,
+          frame: known ? exotic.knobs[jj] + 3 : 12,
+        });
+      }
+      yy += LINEH * 2;
       font.draw({
-        style: style_dwarfs,
-        x: xxx,
+        style: style_text,
+        x: xx,
         y: yy,
         z,
-        text: KNOBS[jj][0],
+        text: `Avg Val: $${round(exotic.total_value / exotic.total_found)}`,
       });
-      let known = knobKnown(exotic, jj);
-
-      sprite_toggles.draw({
-        x: xxx - 1,
-        y: yy + CHH,
-        z,
-        w: KNOB_W, h: KNOB_W,
-        frame: known ? exotic.knobs[jj] + 3 : 12,
-      });
+      yy += LINEH;
     }
-    yy += LINEH * 2;
-    font.draw({
-      style: style_text,
-      x: xx,
-      y: yy,
-      z,
-      text: `Avg Val: $${round(exotic.total_value / exotic.total_found)}`,
-    });
-    yy += LINEH;
   }
   y += INFO_PANEL_H;
   return y;
@@ -1165,47 +1189,6 @@ Remember: keep your SPEED ` +
     x: 1, y, z,
     text: `$${game_state.game_score} ${endless_enabled ? 'Endless' : 'Campaign'} Score`,
   });
-
-  y = game_height - LINEH - 1;
-  let total_knowledge = 0;
-  for (let ii = 0; ii < exotics.length; ++ii) {
-    total_knowledge += exotics[ii].knowledge;
-  }
-  let required_knowledge = ceil(0.8 * NUM_KNOBS * exotics.length);
-  if (total_knowledge >= required_knowledge && !game_state.survey_done) {
-    button_w = 106;
-    if (button({
-      x: game_width - 1 - button_w - 4,
-      y: game_height - 1 - uiButtonHeight(),
-      z,
-      w: button_w,
-      text: `Claim $${game_state.survey_bonus}`,
-      sound_button: 'sell',
-    })) {
-      game_state.survey_done = true;
-      game_state.addScore(game_state.survey_bonus);
-    }
-  } else {
-    drawNonPanel({
-      color: palette_font[3],
-      x: 1, y, z,
-      w: game_width - 1,
-      align: ALIGN.HRIGHT,
-      text: game_state.survey_done ? 'Survey Bonus Claimed' : `Survey Bonus: $${game_state.survey_bonus}`,
-    });
-    if (!game_state.survey_done) {
-      spot({
-        x: 200,
-        y,
-        w: game_width - 200,
-        h: CHH,
-        def: SPOT_DEFAULT_LABEL,
-        // eslint-disable-next-line max-len
-        tooltip: `${total_knowledge} of ${required_knowledge} required affinities discovered to claim survey bonus of $${game_state.survey_bonus}.`,
-      });
-
-    }
-  }
 
   if (keyUpEdge(KEYS.ESC) && !disabled) {
     queueTransition();
@@ -2127,6 +2110,9 @@ export function main(): void {
     'down': 1,
   });
   markdownSetColorStyle('dwarfs', style_dwarfs);
+  markdownSetColorStyle(1, fontStyleColored(null, palette_font[1]));
+  markdownSetColorStyle(2, fontStyleColored(null, palette_font[2]));
+  markdownSetColorStyle(3, fontStyleColored(null, palette_font[3]));
 
   init();
 
@@ -2135,7 +2121,7 @@ export function main(): void {
   if (engine.DEBUG && true) {
     startNewGame();
     tut_state = 999;
-    startMining();
+    // startMining();
   } else if (engine.DEBUG && !true) {
     engine.setState(stateScores);
   }
