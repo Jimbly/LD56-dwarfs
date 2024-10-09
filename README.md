@@ -13,6 +13,20 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
+Post-jam plan:
+  Bonus for doing well
+    try playing a planet
+      first planet: got 100% research exactly when I hit $3000
+      survey bonus feels low compared to 4x100 for one Exotic now
+      took 20 probes (I failed ~2-3)
+    X For danger: generate pattern that matches our expected average danger, advanced based on clock time, not progress
+  Sound for bonus going down
+  X No probe limit, just quota to finish the planet
+  X Survey bonus is per-exotic
+  X High score is: progress towards completion, then min probes launched
+  If any bonus is claimable, do not allow LAUNCH
+  Completed bar w/claimed bonus should look different (solid black)
+
 Visuals
   Eyes / snakes
 

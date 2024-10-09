@@ -4,6 +4,7 @@
 const local_storage = require('glov/client/local_storage');
 local_storage.setStoragePrefix('LD56'); // Before requiring anything else that might load from this
 
+import assert from 'assert';
 import { AnimationSequencer, animationSequencerCreate } from 'glov/client/animation';
 import { autoAtlas } from 'glov/client/autoatlas';
 import * as camera2d from 'glov/client/camera2d';
@@ -87,7 +88,7 @@ import {
   shuffleArray,
 } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
-import { clamp, easeOut, lerp, map01, plural } from 'glov/common/util';
+import { clamp, clone, easeOut, lerp, map01, plural } from 'glov/common/util';
 import {
   unit_vec,
   v4copy,
@@ -136,6 +137,16 @@ const DECEL_SPEED = 0.01;
 const DAMAGE_RATE = 0.002 * 0.75; // JK TEST
 const AMBIENT_DAMAGE_RATE = 0.000015;
 
+const DANGER_MIN = 0;
+const DANGER_MAX = 0.7;
+const DESIRED_DANGER = DANGER_MIN + (DANGER_MAX - DANGER_MIN)/2;
+const DANGER_TIME_SCALE_TIME = 0.0015;
+// const PERFECT_TIME = 1 / (PROGRESS_SPEED * (1 - DESIRED_DANGER)); = 15.384
+// const GOOD_TIME = 1 / (PROGRESS_SPEED * 0.8 *(1 - DESIRED_DANGER));
+// 90% = 17094
+// 80% = 19230
+const BONUS_TIME1 = 18100; // anything reading 18.0s
+const BONUS_TIME2 = 21100;
 
 let rand = randCreate(Date.now());
 let rand_levelgen = randCreate(1234); // just for values
@@ -155,7 +166,8 @@ const NUM_KNOBS = KNOBS.length;
 const CONFIGURE_PANEL_W = 138;
 const CONFIGURE_PANEL_H = 71 - 5 * CHH + NUM_KNOBS * CHH + 4;
 
-const SURVEY_BONUS = 400;
+const SURVEY_BONUS = 800;
+const PLANET_GOAL = 4500;
 
 type ExoticDef = {
   name: string;
@@ -173,11 +185,12 @@ type RecentRecord = {
   exotic: number;
   knobs: number[];
   value: number;
+  bonus: number;
 };
 
 type Score = {
-  money: number;
-  planets: number;
+  probes: number;
+  progress: number;
 };
 let score_system: ScoreSystem<Score>;
 
@@ -217,11 +230,11 @@ function matchInfo(exotic: ExoticDef, probe_config: number[], for_value: boolean
     let probe = probe_config[ii];
     let desired = exotic.knobs[ii];
     let diff = abs(probe - desired);
-    if (diff === 2) {
-      ++diff; // 0/1/3
+    if (diff > 0) {
+      ++diff; // 0/2/3
     }
-    let match = 3 - diff; // 0/2/3
-    let weight = (ii < 2) === !for_value ? 4 : 1;
+    let match = 3 - diff; // 0/1/3
+    let weight = (ii < 2) === !for_value ? 8 : 1;
     total += weight * 3;
     sum_exact += match * weight;
     if (known[ii]) {
@@ -241,8 +254,6 @@ function matchInfo(exotic: ExoticDef, probe_config: number[], for_value: boolean
 
 let tut_state = 0;
 
-const PROBES_DEFAULT = 18;
-
 class GameState {
 
   level_idx = 1;
@@ -250,7 +261,7 @@ class GameState {
   endless_enabled = false;
   constructor() {
     this.initLevel(this.level_idx);
-    if (engine.DEBUG && true) {
+    if (engine.DEBUG && false) {
       for (let ii = 0; ii < 18; ++ii) {
         this.findExoticDebug();
       }
@@ -258,9 +269,11 @@ class GameState {
   }
 
   addScoreFinalize(): void {
+    let progress = this.level_idx - 1;
+    progress += min(1, this.level_score / PLANET_GOAL);
     let score: Score = {
-      planets: this.level_idx,
-      money: this.game_score,
+      probes: this.probes_launched,
+      progress,
     };
     score_system.setScore(1, score);
     if (this.level_idx <= CAMPAIGN_PLANETS) {
@@ -275,26 +288,25 @@ class GameState {
   }
 
   findExoticDebug(): void {
-    this.findExotic();
+    this.findExotic(1);
     let recent = this.recent_exotics[0];
     let exotic = this.exotics[recent.exotic];
     if (exotic.knowledge < NUM_KNOBS) {
       exotic.knowledge++;
     }
-    this.addScore(recent.value);
-    this.probes_left--;
+    this.addScore(recent.value * recent.bonus);
+    this.probes_launched++;
   }
 
 
   level_score!: number;
-  probes_left!: number;
+  probes_launched: number = 0;
   probe_config!: number[];
   exotics!: ExoticDef[];
   recent_exotics!: RecentRecord[];
   initLevel(seed: number): void {
     rand_levelgen.reseed(seed);
     this.level_score = 0;
-    this.probes_left = PROBES_DEFAULT;
     this.probe_config = [];
 
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
@@ -334,7 +346,7 @@ class GameState {
     this.recent_exotics = [];
   }
 
-  findExotic(): void {
+  findExotic(bonus: number): void {
     let { exotics, probe_config } = this;
     let options = [];
     let total_w = 0;
@@ -387,12 +399,17 @@ class GameState {
       exotic: choice,
       knobs: probe_config.slice(0),
       value: ceil(base_value * v),
+      bonus: bonus,
     };
 
     exotic.total_value += recent.value;
     exotic.total_found++;
 
     this.recent_exotics.splice(0, 0, recent);
+  }
+
+  planetDone(): boolean {
+    return this.level_score >= PLANET_GOAL;
   }
 }
 
@@ -430,23 +447,25 @@ function init(): void {
   shader_dither_transition = shaderCreate('shaders/dither_transition.fp');
   shader_gas_giant = shaderCreate('shaders/test.fp');
 
-  const ENCODE_PLANETS = 10000;
+  const ENCODE_PROBES = 100000;
   score_system = scoreAlloc({
     score_to_value: (score: Score): number => {
-      return ENCODE_PLANETS - 1 - score.planets +
-        score.money * ENCODE_PLANETS;
+      let integer_progress = floor(score.progress * 100);
+      return ENCODE_PROBES - 1 - score.probes +
+        integer_progress * ENCODE_PROBES;
     },
     value_to_score: (value: number): Score => {
-      let p = value % ENCODE_PLANETS;
+      let p = value % ENCODE_PROBES;
       value -= p;
+      let integer_progress = floor(value / ENCODE_PROBES);
       return {
-        planets: ENCODE_PLANETS - 1 - p,
-        money: floor(value / ENCODE_PLANETS),
+        probes: ENCODE_PROBES - 1 - p,
+        progress: integer_progress / 100,
       };
     },
     level_defs: 2,
-    score_key: 'LD56b',
-    ls_key: 'ld56b',
+    score_key: 'LD56c',
+    ls_key: 'ld56c',
     asc: false,
     rel: 8,
     num_names: 3,
@@ -580,7 +599,8 @@ function drawExoticInfoPanel(param: {
       z,
       text: ` ${exotic.name}`,
     });
-    if (show_match) {
+    let can_claim = exotic.knowledge === NUM_KNOBS && !exotic.survey_done;
+    if (show_match && !can_claim) {
       spot({
         x: xx + CHW * 7,
         y: yy,
@@ -639,9 +659,9 @@ function drawExoticInfoPanel(param: {
       }, autoAtlas('game', blink ? 'progress_fill_blink' : 'progress_fill'), 1);
     }
     z++;
-    let can_claim = exotic.knowledge === NUM_KNOBS && !exotic.survey_done;
     let tooltip = `[c=1]${exotic.knowledge}[/c] of [c=1]${NUM_KNOBS}[/c] affinities known about this Exotic.
-${exotic.survey_done ? 'SURVEY BONUS claimed' : `[c=1]$${SURVEY_BONUS}[/c] SURVEY BONUS for complete knowledge.`}`;
+${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
+  `[c=1]$${SURVEY_BONUS}[/c] SURVEY BONUS for complete knowledge.`}`;
     spot({
       x: x + 7,
       y: yy,
@@ -781,7 +801,7 @@ function drawBG(dt: number, h: number): void {
   });
 
   let blimp_y_base = 100 - hoffs_float*3;
-  if (!game_state.probes_left) {
+  if (game_state.planetDone()) {
     blimp_y_base -= 30;
   }
   let blimp_y = blimp_y_base + bounce;
@@ -793,7 +813,7 @@ function drawBG(dt: number, h: number): void {
     h: 37,
   });
 
-  if (!game_state.probes_left && !h) {
+  if (game_state.planetDone() && !h) {
     return;
   }
   let probe_y = blimp_y + 33 + hoffs_float*3;
@@ -938,7 +958,7 @@ function stateDroneConfig(dt: number): void {
   let z = Z.UI;
   let w = CONFIGURE_PANEL_W;
 
-  let { probes_left, probe_config, exotics, recent_exotics, endless_enabled } = game_state;
+  let { probe_config, exotics, recent_exotics, endless_enabled } = game_state;
 
   if (tut_state === 0) {
     // eslint-disable-next-line max-len
@@ -951,7 +971,7 @@ NOTE: Interplanetary Expeditions Ltd assures us the probes contain no actual dwa
 
 LAUNCH your first DWARF PROBE to discover an EXOTIC.`);
   } else if (tut_state === 2) {
-    game_state.probes_left = PROBES_DEFAULT;
+    game_state.probes_launched = 0;
     tutPanel(1, 10, 240, `Your very first DWARF PROBE was lost!
 
 Remember: keep your SPEED ` +
@@ -963,7 +983,8 @@ Remember: keep your SPEED ` +
 `, 'OK');
   }
 
-  if (probes_left && tut_state > 2) {
+  let game_done = game_state.planetDone();
+  if (!game_done && tut_state > 2) {
     panel({
       x, y, z,
       w,
@@ -1080,7 +1101,7 @@ Remember: keep your SPEED ` +
         color: palette_font[1],
         x: x + CHW * 7,
         y, z,
-        text: `$${recent.value}`,
+        text: `$${recent.value}`, // ${recent.bonus > 1 ? ` x${recent.bonus}` : ''}
       });
       y += LINEH;
       font.draw({
@@ -1127,7 +1148,7 @@ Remember: keep your SPEED ` +
   let planets_left = CAMPAIGN_PLANETS - game_state.level_idx;
 
   let button_w = 95;
-  y = probes_left ? 164 : 150;
+  y = !game_done ? 164 : 150;
   z = Z.UI;
   if (!disabled) {
     if (buttonText({
@@ -1135,15 +1156,15 @@ Remember: keep your SPEED ` +
       y, z,
       w: button_w,
       disabled,
-      text: probes_left ? 'LAUNCH!' : planets_left || endless_enabled ? 'Next Planet' : 'FINISH',
+      text: !game_done ? 'LAUNCH!' : planets_left || endless_enabled ? 'Next Planet' : 'FINISH',
       sound_button: 'launch',
       hotkey: KEYS.SPACE,
     })) {
       if (tut_state < 2) {
         tut_state = 2;
       }
-      if (probes_left) {
-        game_state.probes_left--;
+      if (!game_done) {
+        game_state.probes_launched++;
         startMining();
       } else {
         queueTransition();
@@ -1157,14 +1178,14 @@ Remember: keep your SPEED ` +
   }
   y += uiButtonHeight() + 2;
   if (!disabled) {
-    if (probes_left) {
-      drawNonPanel({
-        color: palette_font[3],
-        x: 0, y, z,
-        w: game_width,
-        align: ALIGN.HCENTER,
-        text: `${probes_left} ${plural(probes_left, 'Probe')} left`,
-      });
+    if (!game_done) {
+      // drawNonPanel({
+      //   color: palette_font[3],
+      //   x: 0, y, z,
+      //   w: game_width,
+      //   align: ALIGN.HCENTER,
+      //   text: `${game_state.probes_launched} ${plural(game_state.probes_launched, 'Probe')} launched`,
+      // });
     } else if (!endless_enabled) {
       drawNonPanel({
         color: palette_font[3],
@@ -1181,14 +1202,19 @@ Remember: keep your SPEED ` +
   drawNonPanel({
     color: palette_font[3],
     x: 1, y, z,
-    text: `$${game_state.level_score} Planet Score`,
+    text: `Money: $${game_state.level_score}`,
   });
   y += LINEH;
   drawNonPanel({
     color: palette_font[3],
     x: 1, y, z,
-    text: `$${game_state.game_score} ${endless_enabled ? 'Endless' : 'Campaign'} Score`,
+    text: `Quota: $${PLANET_GOAL}`,
   });
+  // drawNonPanel({
+  //   color: palette_font[3],
+  //   x: 1, y, z,
+  //   text: `$${game_state.game_score} ${endless_enabled ? 'Endless' : 'Campaign'} Score`,
+  // });
 
   if (keyUpEdge(KEYS.ESC) && !disabled) {
     queueTransition();
@@ -1198,12 +1224,15 @@ Remember: keep your SPEED ` +
 
 let mining_state: {
   progress: number;
+  time: number;
   speed: number;
   accel: number;
   stress: number;
-  danger: number;
-  danger_target: number;
-  danger_target_time: number;
+  last_danger: number;
+  last_danger_time: number;
+  danger_index: number;
+  danger_schedule: [number, number][];
+  last_bonus: number;
   done: boolean;
 };
 
@@ -1227,6 +1256,31 @@ function shouldBlinkBar(exotic: ExoticDef): boolean {
   }
   return false;
 }
+function bonusForTime(time_ms: number): number {
+  if (time_ms < BONUS_TIME1) {
+    return 4;
+  } else if (time_ms < BONUS_TIME2) {
+    return 2;
+  }
+  return 1;
+}
+function pad2(v: number): string {
+  let s = String(v);
+  if (s.length < 2) {
+    s = ` ${s}`;
+  }
+  return s;
+}
+
+function formatTime(time_ms: number): string {
+  let time_s = floor(time_ms / 1000);
+  let time_ts = floor((time_ms - time_s * 1000)/100);
+  // let time_m = floor(time_s / 60);
+  // time_s -= time_m * 60;
+  // return `${time_m}:${pad2(time_s)}.${time_ts}`;
+  return `${pad2(time_s)}.${time_ts}`;
+}
+
 const RESULT_W = INFO_PANEL_W + 40;
 const STUDY_ANIM_TIME = 1000;
 const SELL_ANIM_TIME = 1000;
@@ -1275,7 +1329,7 @@ function doMiningResult(dt: number): boolean {
     }
   }
   if (mining_result_state.stage === 'sell_anim') {
-    let expected_given = floor(recent.value * min(mining_result_state.t / SELL_ANIM_TIME, 1));
+    let expected_given = floor(recent.value * recent.bonus * min(mining_result_state.t / SELL_ANIM_TIME, 1));
     let left = expected_given - mining_result_state.value_given;
     mining_result_state.value_given = expected_given;
     game_state.level_score += left;
@@ -1293,7 +1347,7 @@ function doMiningResult(dt: number): boolean {
 
   let x = floor((game_width - RESULT_W)/2);
   const x0 = x;
-  let y = 24;
+  let y = 20;
   const y0 = y;
   let z = Z.UI + 100;
   const z0 = z;
@@ -1320,14 +1374,40 @@ function doMiningResult(dt: number): boolean {
     allow_undiscovered: false,
   }) + 2;
 
-  font.draw({
-    style: style_text,
+  let bonus = bonusForTime(mining_state.time);
+  if (bonus > 1) {
+    markdownAuto({
+      font_style: style_text,
+      x, y, z,
+      w,
+      align: ALIGN.HCENTER,
+      text: `Base Value: [c=1]$${recent.value}[/c]`,
+    });
+    y += LINEH;
+    markdownAuto({
+      font_style: style_text,
+      x, y, z,
+      w,
+      align: ALIGN.HCENTER,
+      text: `Time Bonus: [c=1]x${bonus}[/c]`,
+    });
+    spot({
+      def: SPOT_DEFAULT_LABEL,
+      x, y,
+      w, h: CHH,
+      tooltip: `Time: ${formatTime(mining_state.time)}`,
+    });
+    y += LINEH;
+  }
+  markdownAuto({
+    font_style: style_text,
     x, y, z,
     w,
     align: ALIGN.HCENTER,
-    text: `Value: $${recent.value}`,
+    text: `Value: [c=1]$${bonus * recent.value}[/c]`,
   });
-  y += LINEH + 2;
+  y += LINEH;
+  y += 2;
 
   let button_w = 95;
   if (mining_result_state.stage === 'study') {
@@ -1411,7 +1491,7 @@ function doMiningResult(dt: number): boolean {
       x, y, z,
       w,
       align: ALIGN.HCENTER | ALIGN.HWRAP,
-      text: `Sell this Exotic for $${recent.value}.`,
+      text: `Sell this Exotic for $${bonus * recent.value}.`,
     }) + 1;
   }
 
@@ -1501,6 +1581,32 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
 
   let maxp = 1; // (0.7 + game_state.probe_config[0] * 0.3);
   let do_flicker = false;
+
+  if (!mining_state.done) {
+    mining_state.time += dt;
+  }
+  let bonus = bonusForTime(mining_state.time);
+  if (bonus !== mining_state.last_bonus) {
+    mining_state.last_bonus = bonus;
+    playUISound('button_click1');
+  }
+
+  let time_dangerscale = mining_state.time*DANGER_TIME_SCALE_TIME;
+  let danger_sched_entry = mining_state.danger_schedule[mining_state.danger_index];
+  let danger_time_end = mining_state.last_danger_time + danger_sched_entry[0];
+  while (time_dangerscale >= danger_time_end) {
+    mining_state.last_danger = danger_sched_entry[1];
+    mining_state.last_danger_time = danger_time_end;
+    mining_state.danger_index = (mining_state.danger_index + 1) % mining_state.danger_schedule.length;
+    danger_sched_entry = mining_state.danger_schedule[mining_state.danger_index];
+    danger_time_end = mining_state.last_danger_time + danger_sched_entry[0];
+  }
+
+  let danger = lerp(
+    (time_dangerscale - mining_state.last_danger_time) / danger_sched_entry[0],
+    mining_state.last_danger, danger_sched_entry[1]);
+
+
   if (mining_state.done) {
     transition_time += dt;
     transition_time = min(transition_time, MINING_TRANSITION_OUT_TIME);
@@ -1510,6 +1616,7 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
       transition_time = CONFIG_TRANSITION_IN_TIME;
     }
   } else {
+
     if (do_accel) {
       mining_state.accel += dt * ACCEL_SPEED;
     } else {
@@ -1534,25 +1641,15 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
 
     if (mining_state.progress === maxp) {
       mining_state.done = true;
+
       if (mining_result_state) {
         mining_result_state.need_init = true;
       }
       playUISound('success');
-      game_state.findExotic();
+      game_state.findExotic(bonus);
       transition_time = 0;
       if (tut_state === 2) {
         tut_state = 3;
-      }
-    } else {
-      if (mining_state.progress >= mining_state.danger_target_time) {
-        mining_state.danger_target_time += rand.floatBetween(0.05, 0.15);
-        mining_state.danger_target = rand.floatBetween(0, 0.7);
-      }
-      let time_to_target = mining_state.danger_target_time - mining_state.progress;
-      if (time_to_target > 0) {
-        let danger_to_target = mining_state.danger_target - mining_state.danger;
-        mining_state.danger += min(dprogress / time_to_target, 1) *
-          danger_to_target;
       }
     }
 
@@ -1561,7 +1658,7 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
       playUISound('wind', (mining_state.speed - 0.5) * 2 * 0.75 + 0.25);
     }
 
-    let over_danger = max(0, mining_state.speed - (1 - mining_state.danger));
+    let over_danger = max(0, mining_state.speed - (1 - danger));
     if (over_danger && !mining_state.done) {
       over_danger = 0.1 + over_danger;
       mining_state.stress += over_danger * DAMAGE_RATE * dt;
@@ -1692,7 +1789,26 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
   let hbar_x = (game_width - BAR_LONG_SIZE) / 2;
   // let hbar_x = 64;
   drawHBar(hbar_x, 8, 'Progress', mining_state.progress / maxp);
-  let vbar_y = 64;
+  const time_y = 44;
+  const TIME_W = 149;
+  const time_x = floor((game_width - TIME_W)/2);
+
+  markdownAuto({
+    font_style: style_text,
+    x: time_x,
+    w: TIME_W,
+    y: time_y,
+    align: ALIGN.HCENTER,
+    text: `${formatTime(mining_state.time)}  ${bonus > 1 ? `BONUS: [c=1]${bonus}x[/c]` : 'NO Bonus '}`,
+  });
+  panel({
+    x: time_x,
+    y: time_y - 8,
+    z: Z.UI - 1,
+    w: TIME_W,
+    h: CHH + 7*2,
+  });
+  let vbar_y = 72;
   let flicker = do_flicker ? over_danger_time % 200 < 100 : false;
   let x0 = 186;
   let x1 = x0 + 17;
@@ -1700,23 +1816,82 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
   let armor_flicker = mining_state.stress > 0.9 ? getFrameTimestamp() % 200 < 100 : false;
   drawVBar(flicker ? 'vbar' : 'vbar2', x0, vbar_y, 'Speed', mining_state.speed, false);
   drawVBar(flicker ? 'vbar2' : 'vbar', x1, vbar_y,
-    'Safety', 1 - mining_state.danger, true);
+    'Safety', 1 - danger, true);
   drawVBar(armor_flicker ? 'vbar' : 'vbar2', x2, vbar_y, 'Armor', 1 - mining_state.stress, false);
 }
 
+const MIN_FIXUP_TIME = 0.5;
 function startMining(): void {
   engine.setState(stateMine);
-  let danger_init = rand.floatBetween(0.25, 0.75);
+
   mining_state = {
     progress: 0,
+    time: 0,
     speed: 0.5,
     accel: 0,
     stress: 0,
-    danger: 0,
-    danger_target: danger_init,
-    danger_target_time: 0.1,
+    last_danger: 0,
+    last_danger_time: 0,
+    danger_index: 0,
+    danger_schedule: [],
     done: false,
+    last_bonus: bonusForTime(0),
   };
+
+  let danger_schedule = mining_state.danger_schedule;
+  let danger_sum = 0;
+  let danger_div = 0;
+  let last_danger = 0.5;
+  function pushDangerStep(time: number, value: number): void {
+    assert(time > 0);
+    assert(value > 0);
+    danger_sum += (last_danger + value) / 2 * time;
+    danger_div += time;
+    danger_schedule.push([time, value]);
+    last_danger = value;
+  }
+  pushDangerStep(1, rand.floatBetween(0.3, 0.7));
+
+  while (danger_div < 10) {
+    pushDangerStep(rand.floatBetween(1, 3), rand.floatBetween(DANGER_MIN, DANGER_MAX));
+  }
+  // console.log('danger_sched random', danger_schedule.slice(0), danger_sum / danger_div);
+  while (true) {
+    let cur_avg_danger = danger_sum / danger_div;
+    let too_low = cur_avg_danger < DESIRED_DANGER - 0.02;
+    let too_high = cur_avg_danger > DESIRED_DANGER + 0.02;
+    if (!too_low && !too_high) {
+      break;
+    }
+    let dvalue = too_low ? rand.floatBetween(0.6, 0.8) : rand.floatBetween(0, 0.3);
+    // what time is needed to get to the desired average at this danger?
+    // DESIRED_DANGER = (danger_sum + (last_danger + dvalue)/2 * desired_t) / (danger_div + desired_t);
+    let desired_t = (danger_sum - DESIRED_DANGER * danger_div) / (DESIRED_DANGER - (last_danger + dvalue) / 2);
+    if (desired_t < MIN_FIXUP_TIME) {
+      // too short a time, what danger is needed instead?
+      // DESIRED_DANGER = (danger_sum + (last_danger + dvalue)/2 * MIN_FIXUP_TIME) / (danger_div + MIN_FIXUP_TIME)
+      dvalue = (DESIRED_DANGER * (danger_div + MIN_FIXUP_TIME) - danger_sum) / (MIN_FIXUP_TIME/2) - last_danger;
+      if (dvalue > 0) {
+        // never happens because of +/- 0.02 threshold above, I think.
+        pushDangerStep(MIN_FIXUP_TIME, dvalue);
+        // console.log('danger_sched too short', MIN_FIXUP_TIME, dvalue);
+        break;
+      }
+      // console.log('danger_sched too short, but need negative');
+    }
+    if (desired_t >= MIN_FIXUP_TIME && desired_t < 5) {
+      pushDangerStep(desired_t, dvalue);
+      // console.log('danger_sched just right', desired_t, dvalue);
+      break;
+    }
+    // too long, push something random and in the right direction and try again
+    pushDangerStep(rand.floatBetween(1, 3),
+      too_low ?
+        rand.floatBetween(DESIRED_DANGER + 0.1, DANGER_MAX) :
+        rand.floatBetween(DANGER_MIN, DESIRED_DANGER - 0.1));
+    // console.log('danger_sched too long (add random)');
+  }
+  // console.log('danger_sched final', danger_schedule.slice(0), danger_sum / danger_div);
 }
 
 let title_anim: AnimationSequencer | null = null;
@@ -1935,14 +2110,19 @@ const SCORE_COLUMNS = [
   // widths are just proportional, scaled relative to `width` passed in
   { name: '', width: CHW * 3, align: ALIGN.HFIT | ALIGN.HRIGHT | ALIGN.VCENTER },
   { name: 'Name', width: CHW * 8, align: ALIGN.HFIT | ALIGN.VCENTER },
-  { name: 'Score', width: CHW * 6 },
-  { name: 'P', width: CHW * 3 },
+  { name: 'Prog', width: CHW * 4 },
+  { name: 'Dwfs', width: CHW * 4 },
 ];
+const SCORE_COLUMNS_ENDLESS = clone(SCORE_COLUMNS);
+SCORE_COLUMNS_ENDLESS[2].name = 'Plnt';
 const style_score = fontStyleColored(null, palette_font[2]);
 const style_me = fontStyleColored(null, palette_font[1]);
 const style_header = fontStyleColored(null, palette_font[2]);
-function myScoreToRow(row: unknown[], score: Score): void {
-  row.push(score.money, score.planets);
+function myScoreToRowCampaign(row: unknown[], score: Score): void {
+  row.push(floor(score.progress * 100 / 2), score.probes);
+}
+function myScoreToRowEndless(row: unknown[], score: Score): void {
+  row.push(score.progress.toFixed(1), score.probes);
 }
 
 function stateScores(dt: number): void {
@@ -1995,7 +2175,7 @@ function stateScores(dt: number): void {
     line_height: text_height + 2,
     level_index: 0,
     columns: SCORE_COLUMNS,
-    scoreToRow: myScoreToRow,
+    scoreToRow: myScoreToRowCampaign,
     style_score,
     style_me,
     style_header,
@@ -2024,8 +2204,8 @@ function stateScores(dt: number): void {
     size: text_height,
     line_height: text_height + 2,
     level_index: 1,
-    columns: SCORE_COLUMNS,
-    scoreToRow: myScoreToRow,
+    columns: SCORE_COLUMNS_ENDLESS,
+    scoreToRow: myScoreToRowEndless,
     style_score,
     style_me,
     style_header,
@@ -2118,11 +2298,11 @@ export function main(): void {
 
   stateTitleInit();
   engine.setState(stateTitle);
-  if (engine.DEBUG && true) {
+  if (engine.DEBUG && false) {
     startNewGame();
     tut_state = 999;
-    // startMining();
-  } else if (engine.DEBUG && !true) {
+    startMining();
+  } else if (engine.DEBUG && true) {
     engine.setState(stateScores);
   }
 }
