@@ -73,6 +73,7 @@ import {
   drawHBox,
   drawRect,
   drawVBox,
+  modalDialog,
   panel,
   playUISound,
   scaleSizes,
@@ -2035,6 +2036,13 @@ function stateTitle(dt: number): void {
     }
   }
 
+  if (engine.defines.COMPO) {
+    modalDialog({
+      title: 'POST-JAM VERSION',
+      // eslint-disable-next-line max-len
+      text: 'You have appeared to arrive at the post-jam edition of this game via an old link.  Please refresh the ldjam.com page and use the latest link to ensure you are playing the original COMPO version of this game.  If you enjoy the game, seek out the post-jam version (has balance tweaks) after giving a fair rating.',
+    });
+  }
 
   let z = 1;
 
@@ -2099,9 +2107,17 @@ function stateTitle(dt: number): void {
     color: palette_font[0],
     alpha: title_alpha.sub,
     x: 0,
-    y: H - CHH * 2,
+    y: H - CHH * 2 - 3,
     w: W, align: ALIGN.HCENTER,
-    text: 'By Jimb Esser in 48 hours for Ludum Dare 56',
+    text: 'By Jimb Esser for Ludum Dare 56',
+  });
+  font.draw({
+    color: palette_font[0],
+    alpha: title_alpha.sub,
+    x: 0,
+    y: H - CHH - 1,
+    w: W, align: ALIGN.HCENTER,
+    text: '(post-Jam edition with balance tweaks)',
   });
 
   const PROMPT_PAD = 8;
@@ -2110,7 +2126,7 @@ function stateTitle(dt: number): void {
     let button_x0 = floor((W - button_w * 2 - PROMPT_PAD) / 2);
     let button_h = BUTTON_H;
     let color = [1,1,1, title_alpha.button] as const;
-    let y2 = H - BUTTON_H - 40;
+    let y2 = H - BUTTON_H - 44;
     let button_param = {
       color,
       w: button_w,
@@ -2381,7 +2397,7 @@ export function main(): void {
 
   stateTitleInit();
   engine.setState(stateTitle);
-  if (engine.DEBUG && true) {
+  if (engine.DEBUG && !true) {
     if (game_state) {
       engine.setState(stateDroneConfig);
     } else {
@@ -2389,7 +2405,7 @@ export function main(): void {
     }
     tut_state = 999;
     //startMining();
-  } else if (engine.DEBUG && !true) {
-    engine.setState(stateScores);
+  } else if (engine.DEBUG && true) {
+    engine.setState(stateTitle);
   }
 }
