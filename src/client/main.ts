@@ -33,6 +33,7 @@ import {
   mouseDownAnywhere,
   padButtonDown,
 } from 'glov/client/input';
+import { localStorageGetJSON, localStorageSetJSON } from 'glov/client/local_storage';
 import { markdownAuto } from 'glov/client/markdown';
 import { markdownSetColorStyle } from 'glov/client/markdown_renderables';
 import { netInit } from 'glov/client/net';
@@ -87,7 +88,7 @@ import {
   randCreate,
   shuffleArray,
 } from 'glov/common/rand_alea';
-import { TSMap } from 'glov/common/types';
+import { DataObject, TSMap } from 'glov/common/types';
 import { clamp, clone, easeOut, lerp, map01, plural } from 'glov/common/util';
 import {
   unit_vec,
@@ -255,6 +256,16 @@ function matchInfo(exotic: ExoticDef, probe_config: number[], for_value: boolean
 
 let tut_state = 0;
 
+const serialized_fields: (keyof GameState)[] = [
+  'level_idx',
+  'endless_enabled',
+  'game_score',
+  'level_score',
+  'probes_launched',
+  'probe_config',
+  'exotics',
+  'recent_exotics',
+];
 class GameState {
 
   level_idx = 1;
@@ -266,6 +277,26 @@ class GameState {
       for (let ii = 0; ii < 18; ++ii) {
         this.findExoticDebug();
       }
+    }
+  }
+
+
+  saveGame(): void {
+    localStorageSetJSON('savedgame', this.toJSON());
+  }
+
+  toJSON(): DataObject {
+    let ret: DataObject = {};
+    for (let ii = 0; ii < serialized_fields.length; ++ii) {
+      let field = serialized_fields[ii];
+      ret[field] = this[field];
+    }
+    return ret;
+  }
+  fromJSON(obj: DataObject): void {
+    for (let ii = 0; ii < serialized_fields.length; ++ii) {
+      let field = serialized_fields[ii];
+      (this as unknown as DataObject)[field] = obj[field];
     }
   }
 
@@ -481,6 +512,12 @@ function init(): void {
     num_names: 3,
     histogram: false,
   });
+
+  let savedgame = localStorageGetJSON<DataObject>('savedgame');
+  if (savedgame) {
+    game_state = new GameState();
+    game_state.fromJSON(savedgame);
+  }
 }
 
 function startNewGame(): void {
@@ -704,6 +741,7 @@ ${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
       })) {
         exotic.survey_done = true;
         game_state.addScore(SURVEY_BONUS);
+        game_state.saveGame();
       }
     } else {
 
@@ -1039,6 +1077,7 @@ Remember: keep your SPEED ` +
         });
         if (ret) {
           probe_config[ii] = jj;
+          game_state.saveGame();
         }
         sprite_toggles.draw({
           x: xx,
@@ -1179,6 +1218,7 @@ Remember: keep your SPEED ` +
       }
       if (!game_done) {
         game_state.probes_launched++;
+        game_state.saveGame();
         startMining();
       } else {
         queueTransition();
@@ -1340,6 +1380,7 @@ function doMiningResult(dt: number): boolean {
   if (mining_result_state.stage === 'study_anim' || mining_result_state.stage === 'dismantle_anim') {
     if (mining_result_state.t >= STUDY_ANIM_TIME) {
       exotic.knowledge = mining_result_state.knowledge_start + 1;
+      game_state.saveGame();
       if (mining_result_state.stage === 'dismantle_anim') {
         // delay closing?
         mining_result_state.done = true;
@@ -1359,6 +1400,7 @@ function doMiningResult(dt: number): boolean {
     game_state.game_score += left;
     if (mining_result_state.t >= SELL_ANIM_TIME) {
       game_state.addScoreFinalize();
+      game_state.saveGame();
       mining_result_state.done = true;
     }
   }
@@ -2340,7 +2382,11 @@ export function main(): void {
   stateTitleInit();
   engine.setState(stateTitle);
   if (engine.DEBUG && true) {
-    startNewGame();
+    if (game_state) {
+      engine.setState(stateDroneConfig);
+    } else {
+      startNewGame();
+    }
     tut_state = 999;
     //startMining();
   } else if (engine.DEBUG && !true) {

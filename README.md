@@ -31,7 +31,7 @@ Post-jam plan:
   X High score is: progress towards completion, then min probes launched
   X Completed bar w/claimed bonus should look different (solid black)
   X If any bonus is claimable, do not allow LAUNCH
-  Add saving of game state to local storage (upon launch, upon sell/dismantle)
+  X Add saving of game state to local storage (upon launch, upon sell/dismantle)
 
 Visuals
   Eyes / snakes
