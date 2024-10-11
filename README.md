@@ -14,18 +14,24 @@ Acknowledgements:
 Start with: `npm start` (after running `npm i` once)
 
 Post-jam plan:
-  Bonus for doing well
+  playtests
     try playing a planet
       first planet: got 100% research exactly when I hit $3000
       survey bonus feels low compared to 4x100 for one Exotic now
       took 20 probes (I failed ~2-3)
+    another try
+      took 19 probes (failed 1)
+      researched 3/4, found high value exotic early and kept mining it
+    have made more changes: constant schedule
     X For danger: generate pattern that matches our expected average danger, advanced based on clock time, not progress
-  Sound for bonus going down
+  X Bonus for doing well
+  X Sound for bonus going down
   X No probe limit, just quota to finish the planet
   X Survey bonus is per-exotic
   X High score is: progress towards completion, then min probes launched
-  If any bonus is claimable, do not allow LAUNCH
-  Completed bar w/claimed bonus should look different (solid black)
+  X Completed bar w/claimed bonus should look different (solid black)
+  X If any bonus is claimable, do not allow LAUNCH
+  Add saving of game state to local storage (upon launch, upon sell/dismantle)
 
 Visuals
   Eyes / snakes

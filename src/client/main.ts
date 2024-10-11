@@ -180,6 +180,7 @@ type ExoticDef = {
   exotic_style: number;
   seed: number;
   survey_done: boolean;
+  danger_schedule: [number, number][];
 };
 type RecentRecord = {
   exotic: number;
@@ -288,6 +289,7 @@ class GameState {
   }
 
   findExoticDebug(): void {
+    this.pickExotic();
     this.findExotic(1);
     let recent = this.recent_exotics[0];
     let exotic = this.exotics[recent.exotic];
@@ -331,6 +333,7 @@ class GameState {
         knob_order: [],
         exotic_style: styles[style_idx],
         seed: rand_levelgen.range(100000000),
+        danger_schedule: genDangerSchedule(rand_levelgen),
         survey_done: false,
       };
       styles.splice(style_idx, 1);
@@ -346,7 +349,8 @@ class GameState {
     this.recent_exotics = [];
   }
 
-  findExotic(bonus: number): void {
+  picked_exotic!: number;
+  pickExotic(): void {
     let { exotics, probe_config } = this;
     let options = [];
     let total_w = 0;
@@ -354,6 +358,7 @@ class GameState {
       let exotic = exotics[ii];
       let match_info = matchInfo(exotic, probe_config, false);
       let w = match_info.exact;
+      w *= w;
       total_w += w;
       options.push([w, ii]);
     }
@@ -369,6 +374,11 @@ class GameState {
       }
       choice = options[choice][1];
     }
+    this.picked_exotic = choice;
+  }
+
+  findExotic(bonus: number): void {
+    let { exotics, probe_config, picked_exotic: choice } = this;
     let exotic = exotics[choice];
     let match_info_value = matchInfo(exotic, probe_config, true);
     let match_perc = match_info_value.exact / match_info_value.total;
@@ -554,6 +564,7 @@ let style_exotic = [
 
 const KNOB_W = 9;
 
+let any_claimable = false;
 function drawExoticInfoPanel(param: {
   x: number;
   y: number;
@@ -656,7 +667,8 @@ function drawExoticInfoPanel(param: {
         z,
         w: bar_w,
         h: 3,
-      }, autoAtlas('game', blink ? 'progress_fill_blink' : 'progress_fill'), 1);
+      }, autoAtlas('game', blink ? 'progress_fill_blink' :
+        exotic.knowledge === NUM_KNOBS ? 'progress_fill_full' : 'progress_fill'), 1);
     }
     z++;
     let tooltip = `[c=1]${exotic.knowledge}[/c] of [c=1]${NUM_KNOBS}[/c] affinities known about this Exotic.
@@ -673,6 +685,7 @@ ${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
     yy += 5;
 
     if (can_claim) {
+      any_claimable = true;
       font.draw({
         color: palette_font[0],
         x: xx,
@@ -1053,6 +1066,7 @@ Remember: keep your SPEED ` +
     align: ALIGN.HCENTER,
   });
   y += LINEH;
+  any_claimable = false;
   for (let ii = 0; ii < exotics.length; ++ii) {
     let exotic = exotics[ii];
 
@@ -1155,7 +1169,7 @@ Remember: keep your SPEED ` +
       x: floor((game_width - button_w)/2),
       y, z,
       w: button_w,
-      disabled,
+      disabled: disabled || any_claimable,
       text: !game_done ? 'LAUNCH!' : planets_left || endless_enabled ? 'Next Planet' : 'FINISH',
       sound_button: 'launch',
       hotkey: KEYS.SPACE,
@@ -1215,6 +1229,15 @@ Remember: keep your SPEED ` +
   //   x: 1, y, z,
   //   text: `$${game_state.game_score} ${endless_enabled ? 'Endless' : 'Campaign'} Score`,
   // });
+  if (game_state.probes_launched) {
+    drawNonPanel({
+      color: palette_font[3],
+      x: 0, y, z,
+      w: game_width - 1,
+      align: ALIGN.HRIGHT,
+      text: `${game_state.probes_launched} ${plural(game_state.probes_launched, 'Probe')} launched`,
+    });
+  }
 
   if (keyUpEdge(KEYS.ESC) && !disabled) {
     queueTransition();
@@ -1588,7 +1611,7 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
   let bonus = bonusForTime(mining_state.time);
   if (bonus !== mining_state.last_bonus) {
     mining_state.last_bonus = bonus;
-    playUISound('button_click1');
+    playUISound('bonus_down');
   }
 
   let time_dangerscale = mining_state.time*DANGER_TIME_SCALE_TIME;
@@ -1821,24 +1844,11 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
 }
 
 const MIN_FIXUP_TIME = 0.5;
-function startMining(): void {
-  engine.setState(stateMine);
-
-  mining_state = {
-    progress: 0,
-    time: 0,
-    speed: 0.5,
-    accel: 0,
-    stress: 0,
-    last_danger: 0,
-    last_danger_time: 0,
-    danger_index: 0,
-    danger_schedule: [],
-    done: false,
-    last_bonus: bonusForTime(0),
-  };
-
-  let danger_schedule = mining_state.danger_schedule;
+type RandProvider = {
+  floatBetween(a: number, b: number): number;
+};
+function genDangerSchedule(rand_use: RandProvider): [number, number][] {
+  let danger_schedule: [number, number][] = [];
   let danger_sum = 0;
   let danger_div = 0;
   let last_danger = 0.5;
@@ -1850,10 +1860,10 @@ function startMining(): void {
     danger_schedule.push([time, value]);
     last_danger = value;
   }
-  pushDangerStep(1, rand.floatBetween(0.3, 0.7));
+  pushDangerStep(1, rand_use.floatBetween(0.3, 0.7));
 
   while (danger_div < 10) {
-    pushDangerStep(rand.floatBetween(1, 3), rand.floatBetween(DANGER_MIN, DANGER_MAX));
+    pushDangerStep(rand_use.floatBetween(1, 3), rand_use.floatBetween(DANGER_MIN, DANGER_MAX));
   }
   // console.log('danger_sched random', danger_schedule.slice(0), danger_sum / danger_div);
   while (true) {
@@ -1863,7 +1873,7 @@ function startMining(): void {
     if (!too_low && !too_high) {
       break;
     }
-    let dvalue = too_low ? rand.floatBetween(0.6, 0.8) : rand.floatBetween(0, 0.3);
+    let dvalue = too_low ? rand_use.floatBetween(0.6, 0.8) : rand_use.floatBetween(0, 0.3);
     // what time is needed to get to the desired average at this danger?
     // DESIRED_DANGER = (danger_sum + (last_danger + dvalue)/2 * desired_t) / (danger_div + desired_t);
     let desired_t = (danger_sum - DESIRED_DANGER * danger_div) / (DESIRED_DANGER - (last_danger + dvalue) / 2);
@@ -1885,13 +1895,43 @@ function startMining(): void {
       break;
     }
     // too long, push something random and in the right direction and try again
-    pushDangerStep(rand.floatBetween(1, 3),
+    pushDangerStep(rand_use.floatBetween(1, 3),
       too_low ?
-        rand.floatBetween(DESIRED_DANGER + 0.1, DANGER_MAX) :
-        rand.floatBetween(DANGER_MIN, DESIRED_DANGER - 0.1));
+        rand_use.floatBetween(DESIRED_DANGER + 0.1, DANGER_MAX) :
+        rand_use.floatBetween(DANGER_MIN, DESIRED_DANGER - 0.1));
     // console.log('danger_sched too long (add random)');
   }
   // console.log('danger_sched final', danger_schedule.slice(0), danger_sum / danger_div);
+
+  // // Shuffle all but the first
+  // doesn't work, since averages were based on the time above!
+  // let danger_added = danger_schedule.slice(1);
+  // shuffleArray(rand_use, danger_added);
+  // for (let ii = 0; ii < danger_added.length; ++ii) {
+  //   danger_schedule[ii + 1] = danger_added[ii];
+  // }
+  return danger_schedule;
+}
+
+function startMining(): void {
+  engine.setState(stateMine);
+
+  game_state.pickExotic();
+  let exotic = game_state.exotics[game_state.picked_exotic];
+
+  mining_state = {
+    progress: 0,
+    time: 0,
+    speed: 0.5,
+    accel: 0,
+    stress: 0,
+    last_danger: 0,
+    last_danger_time: 0,
+    danger_index: 0,
+    danger_schedule: exotic.danger_schedule || genDangerSchedule(rand),
+    done: false,
+    last_bonus: bonusForTime(0),
+  };
 }
 
 let title_anim: AnimationSequencer | null = null;
@@ -2270,6 +2310,7 @@ export function main(): void {
       sell: { file: 'sell' },
       success: { file: 'success' },
       failure: { file: 'failure' },
+      bonus_down: { file: 'bonus_down' },
       wind: { file: 'wind', volume: 0.25 },
     },
   })) {
@@ -2298,11 +2339,11 @@ export function main(): void {
 
   stateTitleInit();
   engine.setState(stateTitle);
-  if (engine.DEBUG && false) {
+  if (engine.DEBUG && true) {
     startNewGame();
     tut_state = 999;
-    startMining();
-  } else if (engine.DEBUG && true) {
+    //startMining();
+  } else if (engine.DEBUG && !true) {
     engine.setState(stateScores);
   }
 }
