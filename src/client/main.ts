@@ -573,6 +573,7 @@ function init(): void {
   if (savedgame) {
     game_state = new GameState();
     game_state.fromJSON(savedgame);
+    tut_state = 999;
   }
 }
 
