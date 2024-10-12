@@ -149,7 +149,7 @@ const DANGER_TIME_SCALE_TIME = 0.0015;
 // const GOOD_TIME = 1 / (PROGRESS_SPEED * 0.8 *(1 - DESIRED_DANGER));
 // 90% = 17094
 // 80% = 19230
-const BONUS_TIME1 = 18000; // anything reading <=17.9s
+const BONUS_TIME1 = 17600; // anything reading <=17.5s
 const BONUS_TIME2 = 21000;
 
 let rand = randCreate(Date.now());
@@ -1994,7 +1994,7 @@ function genDangerSchedule(rand_use: RandProvider): [number, number][] {
     assert(time > 0);
     assert(value > 0 && value < 1);
     let slope = (value - last_danger) / time;
-    const MAX_SLOPE = 0.08;
+    const MAX_SLOPE = 0.12;
     if (slope > MAX_SLOPE && apply_max_slope) {
       let new_time = (value - last_danger) / MAX_SLOPE;
       // console.log(`danger_sched easing slope v=${value}, t=${time} -> ${new_time}`);
