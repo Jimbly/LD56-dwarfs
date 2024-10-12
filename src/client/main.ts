@@ -31,6 +31,7 @@ import {
   keyDown,
   keyUpEdge,
   mouseDownAnywhere,
+  mouseOver,
   padButtonDown,
 } from 'glov/client/input';
 import { localStorageGetJSON, localStorageSetJSON } from 'glov/client/local_storage';
@@ -71,6 +72,7 @@ import {
   buttonWasFocused,
   drawBox,
   drawHBox,
+  drawLine,
   drawRect,
   drawVBox,
   modalDialog,
@@ -275,7 +277,7 @@ class GameState {
   constructor() {
     this.initLevel(this.level_idx);
     if (engine.DEBUG && false) {
-      for (let ii = 0; ii < 18; ++ii) {
+      for (let ii = 0; ii < 20; ++ii) {
         this.findExoticDebug();
       }
     }
@@ -340,7 +342,7 @@ class GameState {
   recent_exotics!: RecentRecord[];
   initLevel(seed: number): void {
     rand_levelgen.reseed(seed);
-    this.level_score = 0;
+    this.level_score = engine.DEBUG ? 4500 : 0;
     this.probe_config = [];
 
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
@@ -600,6 +602,24 @@ let style_exotic = [
   }),
 ];
 
+function drawDangerSchedule(exotic: ExoticDef): void {
+  let x = 1;
+  let y = game_height / 4;
+  let z = Z.UI + 200;
+  const h = game_height / 2;
+  let { danger_schedule } = exotic;
+
+  let last_v = 0.5;
+  for (let ii = 0; ii < danger_schedule.length * 2; ++ii) {
+    let entry = danger_schedule[ii % danger_schedule.length];
+    let dx = entry[0] * 10;
+    drawLine(x, y + last_v * h, x + dx, y + entry[1] * h, z, 1, 0.99, palette[3]);
+    x += dx;
+    last_v = entry[1];
+  }
+  drawRect(1, y, game_width - 1, y + h, z - 1, palette[0]);
+}
+
 const KNOB_W = 9;
 
 let any_claimable = false;
@@ -622,6 +642,10 @@ function drawExoticInfoPanel(param: {
     eat_clicks: false,
   });
   z++;
+
+  if (engine.defines.DANGER && mouseOver({ x, y, z, w, h: INFO_PANEL_H, peek: true })) {
+    drawDangerSchedule(exotic);
+  }
 
   if (!exotic.knowledge && allow_undiscovered) {
     font.draw({
@@ -1895,18 +1919,25 @@ function genDangerSchedule(rand_use: RandProvider): [number, number][] {
   let danger_sum = 0;
   let danger_div = 0;
   let last_danger = 0.5;
-  function pushDangerStep(time: number, value: number): void {
+  function pushDangerStep(time: number, value: number, apply_max_slope: boolean): void {
     assert(time > 0);
-    assert(value > 0);
+    assert(value > 0 && value < 1);
+    let slope = (value - last_danger) / time;
+    const MAX_SLOPE = 0.1;
+    if (slope > MAX_SLOPE && apply_max_slope) {
+      let new_time = (value - last_danger) / MAX_SLOPE;
+      // console.log(`danger_sched easing slope v=${value}, t=${time} -> ${new_time}`);
+      time = new_time;
+    }
     danger_sum += (last_danger + value) / 2 * time;
     danger_div += time;
     danger_schedule.push([time, value]);
     last_danger = value;
   }
-  pushDangerStep(1, rand_use.floatBetween(0.3, 0.7));
+  pushDangerStep(2.5, rand_use.floatBetween(0.3, 0.7), true);
 
   while (danger_div < 10) {
-    pushDangerStep(rand_use.floatBetween(1, 3), rand_use.floatBetween(DANGER_MIN, DANGER_MAX));
+    pushDangerStep(rand_use.floatBetween(1, 3), rand_use.floatBetween(DANGER_MIN, DANGER_MAX), true);
   }
   // console.log('danger_sched random', danger_schedule.slice(0), danger_sum / danger_div);
   while (true) {
@@ -1924,16 +1955,16 @@ function genDangerSchedule(rand_use: RandProvider): [number, number][] {
       // too short a time, what danger is needed instead?
       // DESIRED_DANGER = (danger_sum + (last_danger + dvalue)/2 * MIN_FIXUP_TIME) / (danger_div + MIN_FIXUP_TIME)
       dvalue = (DESIRED_DANGER * (danger_div + MIN_FIXUP_TIME) - danger_sum) / (MIN_FIXUP_TIME/2) - last_danger;
-      if (dvalue > 0) {
+      if (dvalue > 0 && dvalue < 0.7) {
         // never happens because of +/- 0.02 threshold above, I think.
-        pushDangerStep(MIN_FIXUP_TIME, dvalue);
+        pushDangerStep(MIN_FIXUP_TIME, dvalue, false);
         // console.log('danger_sched too short', MIN_FIXUP_TIME, dvalue);
         break;
       }
-      // console.log('danger_sched too short, but need negative');
+      // console.log('danger_sched too short, but need negative/huge', dvalue);
     }
     if (desired_t >= MIN_FIXUP_TIME && desired_t < 5) {
-      pushDangerStep(desired_t, dvalue);
+      pushDangerStep(desired_t, dvalue, false);
       // console.log('danger_sched just right', desired_t, dvalue);
       break;
     }
@@ -1941,7 +1972,7 @@ function genDangerSchedule(rand_use: RandProvider): [number, number][] {
     pushDangerStep(rand_use.floatBetween(1, 3),
       too_low ?
         rand_use.floatBetween(DESIRED_DANGER + 0.1, DANGER_MAX) :
-        rand_use.floatBetween(DANGER_MIN, DESIRED_DANGER - 0.1));
+        rand_use.floatBetween(DANGER_MIN, DESIRED_DANGER - 0.1), true);
     // console.log('danger_sched too long (add random)');
   }
   // console.log('danger_sched final', danger_schedule.slice(0), danger_sum / danger_div);
@@ -2397,15 +2428,15 @@ export function main(): void {
 
   stateTitleInit();
   engine.setState(stateTitle);
-  if (engine.DEBUG && !true) {
-    if (game_state) {
+  if (engine.DEBUG && true) {
+    if (game_state && false) {
       engine.setState(stateDroneConfig);
     } else {
       startNewGame();
     }
     tut_state = 999;
     //startMining();
-  } else if (engine.DEBUG && true) {
+  } else if (engine.DEBUG && !true) {
     engine.setState(stateTitle);
   }
 }

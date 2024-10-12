@@ -32,6 +32,14 @@ Post-jam plan:
   X Completed bar w/claimed bonus should look different (solid black)
   X If any bonus is claimable, do not allow LAUNCH
   X Add saving of game state to local storage (upon launch, upon sell/dismantle)
+  X max slope on danger sched
+  Delay between launching and time ticking in fishing (require holding space/etc?)
+  seeded random for affinities (and danger sched, I guess), make sure first two planets are a reasonable spread
+    can still randomly swap positives and negatives or something?
+  Maybe: bigger survey bonus for each one
+  slightly easier 4x
+  slower auto-ship so you can see your bonus and value
+
 
 Visuals
   Eyes / snakes
