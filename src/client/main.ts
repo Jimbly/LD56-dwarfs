@@ -257,6 +257,22 @@ function matchInfo(exotic: ExoticDef, probe_config: number[], for_value: boolean
   };
 }
 
+function scoreExoticRange(exotics: ExoticDef[]): number {
+  let diff = 0;
+  for (let ii = 0; ii < exotics.length; ++ii) {
+    let e1 = exotics[ii];
+    for (let jj = 0; jj < exotics.length; ++jj) {
+      if (ii === jj) {
+        continue;
+      }
+      let e2 = exotics[jj];
+      let { exact } = matchInfo(e1, e2.knobs, false);
+      diff += exact * exact;
+    }
+  }
+  return diff;
+}
+
 let tut_state = 0;
 
 const serialized_fields: (keyof GameState)[] = [
@@ -355,6 +371,7 @@ class GameState {
     for (let ii = 0; ii < 5; ++ii) {
       styles.push(ii);
     }
+    const DEBUG_KNOWLEDGE = engine.DEBUG && false;
     for (let ii = 0; ii < num_exotics; ++ii) {
       let style_idx = rand.range(styles.length);
       let exotic: ExoticDef = {
@@ -363,21 +380,52 @@ class GameState {
         value: 5 + rand_levelgen.range(94),
         total_value: 0,
         total_found: 0,
-        knowledge: 0,
+        knowledge: DEBUG_KNOWLEDGE ? NUM_KNOBS : 0,
         knob_order: [],
         exotic_style: styles[style_idx],
         seed: rand_levelgen.range(100000000),
         danger_schedule: genDangerSchedule(rand_levelgen),
-        survey_done: false,
+        survey_done: Boolean(DEBUG_KNOWLEDGE),
       };
+      if (DEBUG_KNOWLEDGE) {
+        exotic.total_found = 1;
+        exotic.total_value = exotic.value;
+      }
       styles.splice(style_idx, 1);
       for (let jj = 0; jj < NUM_KNOBS; ++jj) {
-        exotic.knobs.push(rand.range(3));
+        exotic.knobs.push(rand_levelgen.range(3));
         exotic.knob_order.push(jj);
       }
-      shuffleArray(rand, exotic.knob_order);
+      shuffleArray(rand_levelgen, exotic.knob_order);
       exotics.push(exotic);
     }
+
+    // perform mutations to spread out the exotics
+    const NUM_MUTATIONS = 100;
+    let last_score = scoreExoticRange(exotics);
+    for (let ii = 0; ii < NUM_MUTATIONS; ++ii) {
+      let idx = rand_levelgen.range(exotics.length);
+      let knob = rand_levelgen.range(NUM_KNOBS);
+      let p = rand_levelgen.range(2);
+      exotics[idx].knobs[knob] = (exotics[idx].knobs[knob] + p) % 3;
+      let new_score = scoreExoticRange(exotics);
+      if (new_score < last_score) {
+        last_score = new_score;
+      } else {
+        exotics[idx].knobs[knob] = (exotics[idx].knobs[knob] - p + 3) % 3;
+      }
+    }
+
+
+    // permute positive/negative for per-run variety
+    for (let ii = 0; ii < NUM_KNOBS; ++ii) {
+      if (rand.range(2)) {
+        for (let jj = 0; jj < exotics.length; ++jj) {
+          exotics[jj].knobs[ii] = 2 - exotics[jj].knobs[ii];
+        }
+      }
+    }
+
     this.exotics = exotics;
 
     this.recent_exotics = [];
