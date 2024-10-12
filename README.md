@@ -33,7 +33,7 @@ Post-jam plan:
   X If any bonus is claimable, do not allow LAUNCH
   X Add saving of game state to local storage (upon launch, upon sell/dismantle)
   X max slope on danger sched
-  Delay between launching and time ticking in fishing (require holding space/etc?)
+  X Delay between launching and time ticking in fishing (require holding space/etc?)
   seeded random for affinities (and danger sched, I guess), make sure first two planets are a reasonable spread
     can still randomly swap positives and negatives or something?
   Maybe: bigger survey bonus for each one

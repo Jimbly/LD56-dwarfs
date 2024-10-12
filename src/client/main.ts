@@ -342,7 +342,7 @@ class GameState {
   recent_exotics!: RecentRecord[];
   initLevel(seed: number): void {
     rand_levelgen.reseed(seed);
-    this.level_score = engine.DEBUG ? 4500 : 0;
+    this.level_score = 0;
     this.probe_config = [];
 
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
@@ -820,14 +820,14 @@ let bg_time = 0;
 let bg_dither_uvs = vec4();
 let bg_xoffs = 0;
 let circuvs = vec4();
-function drawBG(dt: number, h: number): void {
+function drawBG(dt: number, h: number, is_mining: boolean): void {
   let bounce = Math.sin(getFrameTimestamp() * 0.005) * 4;
 
   v4copy(engine.border_clear_color, palette[0]);
   v4copy(engine.border_color, palette[0]);
 
-  let xoffs = h ? -90 : 0;
-  if (h) {
+  let xoffs = is_mining ? -90 : 0;
+  if (is_mining) {
     bg_xoffs = lerp(dt/1000, bg_xoffs, xoffs);
   } else {
     bg_xoffs = xoffs;
@@ -1013,7 +1013,7 @@ function stateDroneConfig(dt: number): void {
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
   tickMusic('music_main');
 
-  drawBG(dt, 0);
+  drawBG(dt, 0, false);
 
   let disabled = false;
   if (transition_time) {
@@ -1652,7 +1652,7 @@ function stateMine(dt: number): void {
   dt = min(dt, 200);
   gl.clearColor(palette[PALETTE_BG][0], palette[PALETTE_BG][1], palette[PALETTE_BG][2], 1);
 
-  drawBG(dt, mining_state.progress);
+  drawBG(dt, mining_state.progress, true);
 
   let do_accel = keyDown(KEYS.SPACE) || keyDown(KEYS.A) || mouseDownAnywhere() || padButtonDown(PAD.A) ||
      padButtonDown(PAD.B) || padButtonDown(PAD.X);
@@ -1664,9 +1664,9 @@ function stateMine(dt: number): void {
 But watch out!  If your SPEED is beyond the current SAFETY range, your will lose` +
 ' ARMOR and potentially lose your DWARF.');
     }
-    if (!do_accel && !mining_state.progress) {
-      dt = 0;
-    }
+  }
+  if (!do_accel && !mining_state.progress) {
+    dt = 0;
   }
 
   let maxp = 1; // (0.7 + game_state.probe_config[0] * 0.3);
