@@ -34,10 +34,10 @@ Post-jam plan:
   X Add saving of game state to local storage (upon launch, upon sell/dismantle)
   X max slope on danger sched
   X Delay between launching and time ticking in fishing (require holding space/etc?)
+  X slightly easier 4x
   seeded random for affinities (and danger sched, I guess), make sure first two planets are a reasonable spread
     can still randomly swap positives and negatives or something?
   Maybe: bigger survey bonus for each one
-  slightly easier 4x
   slower auto-ship so you can see your bonus and value
 
 

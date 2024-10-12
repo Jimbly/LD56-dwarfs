@@ -149,7 +149,7 @@ const DANGER_TIME_SCALE_TIME = 0.0015;
 // const GOOD_TIME = 1 / (PROGRESS_SPEED * 0.8 *(1 - DESIRED_DANGER));
 // 90% = 17094
 // 80% = 19230
-const BONUS_TIME1 = 18100; // anything reading 18.0s
+const BONUS_TIME1 = 18300; // anything reading <=18.2s
 const BONUS_TIME2 = 21100;
 
 let rand = randCreate(Date.now());
