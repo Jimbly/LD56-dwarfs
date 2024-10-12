@@ -37,8 +37,8 @@ Post-jam plan:
   X slightly easier 4x
   X seeded random for affinities, make sure first two planets are a reasonable spread
     X can still randomly swap positives and negatives or something?
-  Maybe: bigger survey bonus for each one
-  slower auto-ship so you can see your bonus and value
+  X Maybe: bigger survey bonus for each one
+  X slower auto-ship so you can see your bonus and value
 
 
 Visuals

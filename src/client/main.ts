@@ -170,7 +170,12 @@ const NUM_KNOBS = KNOBS.length;
 const CONFIGURE_PANEL_W = 138;
 const CONFIGURE_PANEL_H = 71 - 5 * CHH + NUM_KNOBS * CHH + 4;
 
-const SURVEY_BONUS = 800;
+const SURVEY_SCHEDULE = [
+  500,
+  700,
+  1000,
+  1300,
+];
 const PLANET_GOAL = 4500;
 
 type ExoticDef = {
@@ -292,7 +297,7 @@ class GameState {
   endless_enabled = false;
   constructor() {
     this.initLevel(this.level_idx);
-    if (engine.DEBUG && false) {
+    if (engine.DEBUG && true) {
       for (let ii = 0; ii < 20; ++ii) {
         this.findExoticDebug();
       }
@@ -781,9 +786,18 @@ function drawExoticInfoPanel(param: {
         exotic.knowledge === NUM_KNOBS ? 'progress_fill_full' : 'progress_fill'), 1);
     }
     z++;
+    let surveys_done = 0;
+    for (let ii = 0; ii < game_state.exotics.length; ++ii) {
+      if (game_state.exotics[ii].survey_done) {
+        surveys_done++;
+      }
+    }
+    let this_reward = SURVEY_SCHEDULE[surveys_done];
+    let max_reward = SURVEY_SCHEDULE[SURVEY_SCHEDULE.length - 1];
     let tooltip = `[c=1]${exotic.knowledge}[/c] of [c=1]${NUM_KNOBS}[/c] affinities known about this Exotic.
 ${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
-  `[c=1]$${SURVEY_BONUS}[/c] SURVEY BONUS for complete knowledge.`}`;
+  `[c=1]$${this_reward}[/c]${this_reward === max_reward ? '' : ` to [c=1]$${max_reward}[/c]`}` +
+  ' SURVEY BONUS for complete knowledge.'}`;
     spot({
       x: x + 7,
       y: yy,
@@ -805,6 +819,11 @@ ${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
         text: '100% KNOWN!',
       });
       yy += LINEH;
+      tooltip = `[c=1]${exotic.knowledge}[/c] of [c=1]${NUM_KNOBS}[/c] affinities known about this Exotic.
+${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
+  `[c=1]$${this_reward}[/c]` +
+  ' SURVEY BONUS for complete knowledge.'}`;
+
       if (buttonText({
         x: xx, y: yy, z,
         w,
@@ -813,7 +832,7 @@ ${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
         sound_button: 'sell'
       })) {
         exotic.survey_done = true;
-        game_state.addScore(SURVEY_BONUS);
+        game_state.addScore(this_reward);
         game_state.saveGame();
       }
     } else {
@@ -1373,7 +1392,7 @@ let mining_state: {
 };
 
 let mining_result_state: {
-  stage: string; // study, stud_anim, choice, dismantle_anim, sell_anim
+  stage: string; // study, stud_anim, choice, dismantle_anim, sell_anim, sell_auto_anim
   is_new: boolean;
   t: number;
   knowledge_start: number;
@@ -1420,6 +1439,7 @@ function formatTime(time_ms: number): string {
 const RESULT_W = INFO_PANEL_W + 40;
 const STUDY_ANIM_TIME = 1000;
 const SELL_ANIM_TIME = 1000;
+const SELL_AUTO_ANIM_TIME = 1800;
 let mr_ymax = 0;
 function doMiningResult(dt: number): boolean {
   if (!mining_state || mining_state.stress >= 1) {
@@ -1465,13 +1485,14 @@ function doMiningResult(dt: number): boolean {
       exotic.knowledge = mining_result_state.knowledge_start + mining_result_state.t / STUDY_ANIM_TIME;
     }
   }
-  if (mining_result_state.stage === 'sell_anim') {
-    let expected_given = floor(recent.value * recent.bonus * min(mining_result_state.t / SELL_ANIM_TIME, 1));
+  if (mining_result_state.stage === 'sell_anim' || mining_result_state.stage === 'sell_auto_anim') {
+    let maxt = mining_result_state.stage === 'sell_anim' ? SELL_ANIM_TIME : SELL_AUTO_ANIM_TIME;
+    let expected_given = floor(recent.value * recent.bonus * min(mining_result_state.t / maxt, 1));
     let left = expected_given - mining_result_state.value_given;
     mining_result_state.value_given = expected_given;
     game_state.level_score += left;
     game_state.game_score += left;
-    if (mining_result_state.t >= SELL_ANIM_TIME) {
+    if (mining_result_state.t >= maxt) {
       game_state.addScoreFinalize();
       game_state.saveGame();
       mining_result_state.done = true;
@@ -1479,7 +1500,7 @@ function doMiningResult(dt: number): boolean {
   }
   if (mining_result_state.stage === 'choice' && exotic.knowledge === NUM_KNOBS) {
     playUISound('sell');
-    mining_result_state.stage = 'sell_anim';
+    mining_result_state.stage = 'sell_auto_anim';
     mining_result_state.t = 0;
   }
 
@@ -1577,7 +1598,8 @@ function doMiningResult(dt: number): boolean {
   } else if (
     mining_result_state.stage === 'study_anim' ||
     mining_result_state.stage === 'dismantle_anim' ||
-    mining_result_state.stage === 'sell_anim'
+    mining_result_state.stage === 'sell_anim' ||
+    mining_result_state.stage === 'sell_auto_anim'
   ) {
     y += 12;
     y += font.draw({
@@ -2483,7 +2505,7 @@ export function main(): void {
       startNewGame();
     }
     tut_state = 999;
-    //startMining();
+    startMining();
   } else if (engine.DEBUG && !true) {
     engine.setState(stateTitle);
   }
