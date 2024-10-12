@@ -149,8 +149,8 @@ const DANGER_TIME_SCALE_TIME = 0.0015;
 // const GOOD_TIME = 1 / (PROGRESS_SPEED * 0.8 *(1 - DESIRED_DANGER));
 // 90% = 17094
 // 80% = 19230
-const BONUS_TIME1 = 18300; // anything reading <=18.2s
-const BONUS_TIME2 = 21100;
+const BONUS_TIME1 = 18000; // anything reading <=17.9s
+const BONUS_TIME2 = 21000;
 
 let rand = randCreate(Date.now());
 let rand_levelgen = randCreate(1234); // just for values
@@ -297,7 +297,7 @@ class GameState {
   endless_enabled = false;
   constructor() {
     this.initLevel(this.level_idx);
-    if (engine.DEBUG && true) {
+    if (engine.DEBUG && false) {
       for (let ii = 0; ii < 20; ++ii) {
         this.findExoticDebug();
       }
@@ -1993,7 +1993,7 @@ function genDangerSchedule(rand_use: RandProvider): [number, number][] {
     assert(time > 0);
     assert(value > 0 && value < 1);
     let slope = (value - last_danger) / time;
-    const MAX_SLOPE = 0.1;
+    const MAX_SLOPE = 0.08;
     if (slope > MAX_SLOPE && apply_max_slope) {
       let new_time = (value - last_danger) / MAX_SLOPE;
       // console.log(`danger_sched easing slope v=${value}, t=${time} -> ${new_time}`);
@@ -2505,7 +2505,7 @@ export function main(): void {
       startNewGame();
     }
     tut_state = 999;
-    startMining();
+    // startMining();
   } else if (engine.DEBUG && !true) {
     engine.setState(stateTitle);
   }
