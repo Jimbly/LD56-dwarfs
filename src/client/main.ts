@@ -149,8 +149,8 @@ const DANGER_TIME_SCALE_TIME = 0.0015;
 // const GOOD_TIME = 1 / (PROGRESS_SPEED * 0.8 *(1 - DESIRED_DANGER));
 // 90% = 17094
 // 80% = 19230
-const BONUS_TIME1 = 17600; // anything reading <=17.5s
-const BONUS_TIME2 = 21000;
+const BONUS_TIME1 = 17200; // anything reading <=17.1s
+const BONUS_TIME2 = 20000;
 
 let rand = randCreate(Date.now());
 let rand_levelgen = randCreate(1234); // just for values
@@ -1803,6 +1803,9 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
     if (mining_state.progress === maxp) {
       mining_state.done = true;
 
+      // eslint-disable-next-line max-len
+      console.log(`!!!!! danger_time=${time_dangerscale} max=${(mining_state.danger_schedule as unknown as DataObject).debug_max_time} rt=${mining_state.time} ex=${game_state.picked_exotic}`);
+
       if (mining_result_state) {
         mining_result_state.need_init = true;
       }
@@ -1981,7 +1984,6 @@ But watch out!  If your SPEED is beyond the current SAFETY range, your will lose
   drawVBar(armor_flicker ? 'vbar' : 'vbar2', x2, vbar_y, 'Armor', 1 - mining_state.stress, false);
 }
 
-const MIN_FIXUP_TIME = 0.5;
 type RandProvider = {
   floatBetween(a: number, b: number): number;
 };
@@ -1994,10 +1996,14 @@ function genDangerSchedule(rand_use: RandProvider): [number, number][] {
     assert(time > 0);
     assert(value > 0 && value < 1);
     let slope = (value - last_danger) / time;
-    const MAX_SLOPE = 0.12;
+    const MAX_SLOPE = 0.2;
     if (slope > MAX_SLOPE && apply_max_slope) {
       let new_time = (value - last_danger) / MAX_SLOPE;
       // console.log(`danger_sched easing slope v=${value}, t=${time} -> ${new_time}`);
+      time = new_time;
+    } else if (slope < -MAX_SLOPE * 2) {
+      let new_time = (value - last_danger) / (-MAX_SLOPE * 2);
+      // console.log(`danger_sched easing inverse slope v=${value}, t=${time} -> ${new_time}`);
       time = new_time;
     }
     danger_sum += (last_danger + value) / 2 * time;
@@ -2010,43 +2016,34 @@ function genDangerSchedule(rand_use: RandProvider): [number, number][] {
   while (danger_div < 10) {
     pushDangerStep(rand_use.floatBetween(1, 3), rand_use.floatBetween(DANGER_MIN, DANGER_MAX), true);
   }
-  // console.log('danger_sched random', danger_schedule.slice(0), danger_sum / danger_div);
+  pushDangerStep(max(0.1, 12 - danger_div), 0.5, true);
+  // console.log('danger_sched random', clone(danger_schedule), danger_sum / danger_div);
   while (true) {
     let cur_avg_danger = danger_sum / danger_div;
+    let delta = DESIRED_DANGER - cur_avg_danger;
+    // console.log('danger_sched delta', delta, cur_avg_danger);
+    // add delta to everything we can (will preserve or decrease slopes)
+    for (let ii = 0; ii < danger_schedule.length; ++ii) {
+      let oldv = danger_schedule[ii][1];
+      let time = danger_schedule[ii][0];
+      let newv = clamp(oldv + delta, DANGER_MIN, DANGER_MAX);
+      let ourdelta = newv - oldv;
+      danger_schedule[ii][1] = newv;
+      let nexttime = danger_schedule[(ii+1) % danger_schedule.length]?.[0];
+      danger_sum += ourdelta * (time + nexttime) / 2;
+    }
+    cur_avg_danger = danger_sum / danger_div;
     let too_low = cur_avg_danger < DESIRED_DANGER - 0.02;
     let too_high = cur_avg_danger > DESIRED_DANGER + 0.02;
     if (!too_low && !too_high) {
       break;
     }
-    let dvalue = too_low ? rand_use.floatBetween(0.6, 0.8) : rand_use.floatBetween(0, 0.3);
-    // what time is needed to get to the desired average at this danger?
-    // DESIRED_DANGER = (danger_sum + (last_danger + dvalue)/2 * desired_t) / (danger_div + desired_t);
-    let desired_t = (danger_sum - DESIRED_DANGER * danger_div) / (DESIRED_DANGER - (last_danger + dvalue) / 2);
-    if (desired_t < MIN_FIXUP_TIME) {
-      // too short a time, what danger is needed instead?
-      // DESIRED_DANGER = (danger_sum + (last_danger + dvalue)/2 * MIN_FIXUP_TIME) / (danger_div + MIN_FIXUP_TIME)
-      dvalue = (DESIRED_DANGER * (danger_div + MIN_FIXUP_TIME) - danger_sum) / (MIN_FIXUP_TIME/2) - last_danger;
-      if (dvalue > 0 && dvalue < 0.7) {
-        // never happens because of +/- 0.02 threshold above, I think.
-        pushDangerStep(MIN_FIXUP_TIME, dvalue, false);
-        // console.log('danger_sched too short', MIN_FIXUP_TIME, dvalue);
-        break;
-      }
-      // console.log('danger_sched too short, but need negative/huge', dvalue);
-    }
-    if (desired_t >= MIN_FIXUP_TIME && desired_t < 5) {
-      pushDangerStep(desired_t, dvalue, false);
-      // console.log('danger_sched just right', desired_t, dvalue);
-      break;
-    }
-    // too long, push something random and in the right direction and try again
-    pushDangerStep(rand_use.floatBetween(1, 3),
-      too_low ?
-        rand_use.floatBetween(DESIRED_DANGER + 0.1, DANGER_MAX) :
-        rand_use.floatBetween(DANGER_MIN, DESIRED_DANGER - 0.1), true);
-    // console.log('danger_sched too long (add random)');
+    // console.log('!!! danger_sched need retry after delta', clone(danger_schedule), danger_sum/danger_div,danger_div);
   }
-  // console.log('danger_sched final', danger_schedule.slice(0), danger_sum / danger_div);
+
+  // console.log('danger_sched final', clone(danger_schedule), danger_sum / danger_div, danger_div);
+
+  (danger_schedule as unknown as DataObject).debug_max_time = danger_div;
 
   // // Shuffle all but the first
   // doesn't work, since averages were based on the time above!
