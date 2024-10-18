@@ -731,9 +731,10 @@ function drawExoticInfoPanel(param: {
       spot({
         x: xx + CHW * 7,
         y: yy,
-        w,
+        w: w - CHW * 7,
         h: CHH,
         def: SPOT_DEFAULT_LABEL,
+        pad_focusable: false,
         // eslint-disable-next-line max-len
         tooltip: 'This % indicates how well your current [c=dwarfs]DWARFS[/c] match the specified Exotic, based on what you currently know about it.\n\nHigher matches will also yield more valuable resources.',
       });
@@ -799,14 +800,17 @@ function drawExoticInfoPanel(param: {
 ${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
   `[c=1]$${this_reward}[/c]${this_reward === max_reward ? '' : ` to [c=1]$${max_reward}[/c]`}` +
   ' SURVEY BONUS for complete knowledge.'}`;
-    spot({
-      x: x + 7,
-      y: yy,
-      w: BAR_FULL_W,
-      h: 3 + (can_claim ? LINEH : 0),
-      def: SPOT_DEFAULT_LABEL,
-      tooltip,
-    });
+    if (!can_claim) {
+      spot({
+        x: x + 7,
+        y: yy,
+        w: BAR_FULL_W,
+        h: 3 + (can_claim ? LINEH : 0),
+        def: SPOT_DEFAULT_LABEL,
+        pad_focusable: false,
+        tooltip,
+      });
+    }
     yy += 5;
 
     if (can_claim) {
@@ -844,6 +848,7 @@ ${exotic.survey_done ? 'SURVEY BONUS already claimed.' :
         w: CHW * 11,
         h: CHH * 2,
         def: SPOT_DEFAULT_LABEL,
+        pad_focusable: false,
         tooltip: `This Exotic's known affinities.
 
 If you configure your probe's [c=dwarfs]DWARFS[/c] to match, you will be more likely to find this Exotic,` +
@@ -1150,6 +1155,20 @@ Remember: keep your SPEED ` +
 
     x += 7;
     w -= 7 * 2;
+
+    if (tut_state !== 3) {
+      spot({
+        def: SPOT_DEFAULT_LABEL,
+        x, y,
+        w: CHW * 10,
+        h: CHH * 6 + 8,
+        tooltip: 'The launch region ([c=dwarfs]DW[/c]) strongly affects [c=1]which[/c] Exotic will be found.' +
+        ' The properties ([c=dwarfs]ARFS[/c]) strongly affect the [c=1]value[/c] of the Exotics found.',
+        tooltip_markdown: true,
+        pad_focusable: false,
+      });
+    }
+
     for (let ii = 0; ii < NUM_KNOBS; ++ii) {
       markdownAuto({
         font_style: style_text,
@@ -1218,7 +1237,8 @@ Remember: keep your SPEED ` +
   w = INFO_PANEL_W;
   z = Z.UI;
   if (recent_exotics.length) {
-    font.draw({
+    let recent_y0 = y;
+    drawNonPanel({
       color: palette_font[3],
       x, y, z, w,
       text: 'Recent Finds',
@@ -1255,15 +1275,6 @@ Remember: keep your SPEED ` +
         x, y, z,
         text: 'DWARFS:',
       });
-      spot({
-        x: x,
-        y: y - 1,
-        w: CHW * KNOB_W + 2 + CHW * 7,
-        h: KNOB_W,
-        def: SPOT_DEFAULT_LABEL,
-        // eslint-disable-next-line max-len
-        tooltip: 'This record shows your configured [c=dwarfs]DWARFS[/c] when this Exotic was collected.',
-      });
 
       for (let jj = 0; jj < NUM_KNOBS; ++jj) {
         let xxx = x + CHW * 7 + jj * CHW;
@@ -1281,6 +1292,16 @@ Remember: keep your SPEED ` +
       y += LINEH;
     }
     y += 4;
+    spot({
+      x: 1,
+      y: recent_y0 - 1,
+      w: INFO_PANEL_W,
+      h: game_height - 49,
+      def: SPOT_DEFAULT_LABEL,
+      pad_focusable: false,
+      // eslint-disable-next-line max-len
+      tooltip: 'Record of your configured [c=dwarfs]DWARFS[/c] when each Exotic was collected.',
+    });
     panel({
       x: 1,
       y: left_y0,

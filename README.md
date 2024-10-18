@@ -39,7 +39,8 @@ Post-jam plan:
     X can still randomly swap positives and negatives or something?
   X Maybe: bigger survey bonus for each one
   X slower auto-ship so you can see your bonus and value
-
+  X add DW/ARFS info to tooltips somewhere
+  X better gamepad focus
 
 Visuals
   Eyes / snakes
